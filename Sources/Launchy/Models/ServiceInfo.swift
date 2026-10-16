@@ -26,20 +26,10 @@ struct ServiceInfo {
 
     /// 优先从程序路径里找 .app；再试 AssociatedBundleIdentifiers / 标签对应的 bundle id
     var owningAppURL: URL? {
-        if let program, let range = program.range(of: ".app/") {
-            return URL(fileURLWithPath: String(program[..<range.lowerBound]) + ".app")
-        }
         var ids: [String] = []
         if let s = dict["AssociatedBundleIdentifiers"] as? String { ids.append(s) }
         if let a = dict["AssociatedBundleIdentifiers"] as? [String] { ids += a }
-        // 例如 com.tencent.Lemon.monitor -> com.tencent.Lemon
-        let parts = item.label.split(separator: ".")
-        if parts.count > 3 { ids.append(parts.dropLast().joined(separator: ".")) }
-        ids.append(item.label)
-        for id in ids {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return url }
-        }
-        return nil
+        return AppResolver.resolve(label: item.label, program: program, extraBundleIDs: ids)
     }
 
     var owningAppName: String? {

@@ -65,14 +65,20 @@ struct ItemRow: View {
     let statusColor: Color
     @Binding var isOn: Bool
     var toggleDisabled = false
+    /// 有值时用它代替 SF Symbol 图标（服务列表用真实的 app 图标）
+    var iconView: AnyView? = nil
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(tint)
-                .frame(width: 38, height: 38)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+            if let iconView {
+                iconView
+            } else {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(tint)
+                    .frame(width: 38, height: 38)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.body.weight(.semibold))
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)

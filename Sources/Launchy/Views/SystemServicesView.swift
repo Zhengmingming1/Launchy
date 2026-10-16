@@ -39,7 +39,8 @@ struct SystemServicesView: View {
                         statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                         isOn: Binding(get: { !item.isDisabled },
                                       set: { store.setEnabled(item, $0) }),
-                        toggleDisabled: !advancedMode)
+                        toggleDisabled: !advancedMode,
+                        iconView: AnyView(ServiceIconView(item: item)))
                 .contentShape(Rectangle())
                 .onTapGesture { selected = item }
             }

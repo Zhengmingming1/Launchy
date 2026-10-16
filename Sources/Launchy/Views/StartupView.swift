@@ -30,7 +30,8 @@ struct StartupView: View {
                                         status: item.statusText,
                                         statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                                         isOn: Binding(get: { !item.isDisabled },
-                                                      set: { store.setEnabled(item, $0) }))
+                                                      set: { store.setEnabled(item, $0) }),
+                                        iconView: AnyView(ServiceIconView(item: item)))
                                 .contentShape(Rectangle())
                                 .onTapGesture { selected = item }
                                 .contextMenu {

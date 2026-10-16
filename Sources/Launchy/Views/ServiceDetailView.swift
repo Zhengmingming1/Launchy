@@ -56,14 +56,7 @@ struct ServiceDetailView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            if let url = info.owningAppURL {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                    .resizable().frame(width: 52, height: 52)
-            } else {
-                Image(systemName: info.editable ? "gearshape" : "lock.fill")
-                    .font(.system(size: 30)).frame(width: 52, height: 52)
-                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            }
+            ServiceIconView(item: item, size: 52)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.friendlyName).font(.title2.weight(.bold))
                 Text(info.owningAppName.map { "来自：\($0)" } ?? item.scope.title)

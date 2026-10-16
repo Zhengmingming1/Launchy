@@ -71,3 +71,43 @@ enum Launchctl {
         return set
     }
 }
+
+// MARK: - 单个服务的详细状态
+
+extension Launchctl {
+    struct ServiceState {
+        let loaded: Bool
+        let running: Bool
+        let pid: Int?
+    }
+
+    /// 用 `launchctl print <domain>/<label>` 查询状态。
+    /// 输出里有类似 `state = running`、`pid = 123` 的行；命令失败说明没加载。
+    static func state(domain: String, label: String) -> ServiceState {
+        let r = Shell.run(path, ["print", "\(domain)/\(label)"])
+        guard r.ok else { return ServiceState(loaded: false, running: false, pid: nil) }
+        var pid: Int?
+        var running = false
+        for raw in r.output.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            // 只看第一层的字段，避免读到嵌套块里的同名字段
+            if pid == nil, line.hasPrefix("pid = ") {
+                pid = Int(line.dropFirst("pid = ".count))
+            } else if line.hasPrefix("state = ") {
+                running = running || line.hasSuffix("running")
+            }
+        }
+        return ServiceState(loaded: true, running: running || pid != nil, pid: pid)
+    }
+
+    /// 并发批量查询，几百个服务也只要一两秒
+    static func states(_ items: [(domain: String, label: String)]) -> [ServiceState] {
+        var results = [ServiceState?](repeating: nil, count: items.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: items.count) { i in
+            let s = state(domain: items[i].domain, label: items[i].label)
+            lock.lock(); results[i] = s; lock.unlock()
+        }
+        return results.map { $0 ?? ServiceState(loaded: false, running: false, pid: nil) }
+    }
+}

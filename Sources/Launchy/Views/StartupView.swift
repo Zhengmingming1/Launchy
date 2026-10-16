@@ -26,8 +26,8 @@ struct StartupView: View {
                                         tint: .blue,
                                         title: item.friendlyName,
                                         subtitle: item.label,
-                                        status: item.isDisabled ? "已关闭" : (item.isRunning ? "运行中" : "已启用"),
-                                        statusColor: item.isDisabled ? .gray : .green,
+                                        status: item.statusText,
+                                        statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                                         isOn: Binding(get: { !item.isDisabled },
                                                       set: { store.setEnabled(item, $0) }))
                                 .contextMenu {
@@ -48,7 +48,7 @@ struct StartupView: View {
         .navigationSubtitle("登录后会自动在后台运行的第三方程序")
         .searchable(text: $search, prompt: "搜索程序…")
         .toolbar {
-            Button { store.reload() } label: { Label("刷新", systemImage: "arrow.clockwise") }
+            Button { store.reload(); store.refreshStates(force: true) } label: { Label("刷新", systemImage: "arrow.clockwise") }
         }
         .errorAlert($store.lastError)
     }

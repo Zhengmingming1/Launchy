@@ -37,6 +37,17 @@ struct ServiceItem: Identifiable, Equatable {
     let program: String?
     var isDisabled: Bool
     var isRunning: Bool
+    /// 进程号（来自 launchctl print，可能为空）
+    var pid: Int?
+    /// 已经停用 / 启用，但 SIP 不让立即卸载，需要重启才生效
+    var pendingReboot = false
+
+    /// 给人看的状态：运行中 / 已停止 / 已停用 / 重启后生效
+    var statusText: String {
+        if pendingReboot { return "重启后生效" }
+        if isDisabled { return "已停用" }
+        return isRunning ? "运行中" : "已停止"
+    }
 
     var id: String { scope.rawValue + "/" + label }
 

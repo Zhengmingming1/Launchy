@@ -16,6 +16,13 @@ final class ServicesStore: ObservableObject {
     @Published private(set) var systemItems: [ServiceItem] = []
     @Published private(set) var history: [ChangeRecord] = []
     @Published var lastError: String?
+    /// 是否有「重启后才生效」的修改
+    @Published private(set) var pendingReboot: Set<String> = []
+    @Published private(set) var isRefreshing = false
+
+    /// launchctl print 的结果缓存几秒，避免切页面时反复查询
+    private var stateCache: [String: (time: Date, state: Launchctl.ServiceState)] = [:]
+    private let cacheSeconds: TimeInterval = 5
 
     private let historyURL = Paths.support.appendingPathComponent("history.json")
 
@@ -51,44 +58,93 @@ final class ServicesStore: ObservableObject {
             + scan(Paths.globalDaemons, .daemon)
         systemItems = scan(Paths.systemAgents, .systemAgent)
             + scan(Paths.systemDaemons, .systemDaemon)
+        applyCachedStates()
+        refreshStates()
+    }
+
+    /// 把缓存里的运行状态填到列表上
+    private func applyCachedStates() {
+        func apply(_ list: inout [ServiceItem]) {
+            for i in list.indices {
+                list[i].pendingReboot = pendingReboot.contains(list[i].id)
+                if let cached = stateCache[list[i].id] {
+                    list[i].isRunning = cached.state.running
+                    list[i].pid = cached.state.pid
+                }
+            }
+        }
+        apply(&startupItems)
+        apply(&systemItems)
+    }
+
+    /// 在后台批量执行 launchctl print，查询过期的条目，查完回到主线程更新界面
+    func refreshStates(force: Bool = false) {
+        let now = Date()
+        let all = startupItems + systemItems
+        let stale = all.filter { item in
+            force || stateCache[item.id].map { now.timeIntervalSince($0.time) > cacheSeconds } ?? true
+        }
+        guard !stale.isEmpty, !isRefreshing else { return }
+        isRefreshing = true
+        let queries = stale.map { (domain: $0.scope.domain, label: $0.label) }
+        let ids = stale.map(\.id)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let states = Launchctl.states(queries)
+            DispatchQueue.main.async {
+                let time = Date()
+                for (id, st) in zip(ids, states) { self.stateCache[id] = (time, st) }
+                self.isRefreshing = false
+                self.applyCachedStates()
+            }
+        }
     }
 
     // MARK: - 开关
 
-    /// 打开或关闭一个服务。
-    /// - 第三方服务：enable/disable + 立即加载/卸载
-    /// - 苹果系统服务：受 SIP 保护，只做 enable/disable，重启后生效
+    /// 打开或关闭一个服务，尽量立即生效：
+    /// - 停用：launchctl disable，然后 bootout（马上停掉）
+    /// - 启用：launchctl enable，然后 bootstrap（马上加载）
+    /// 两步合成一条命令；需要管理员的只弹一次密码框。
+    /// 苹果系统服务常常因为 SIP 无法 bootout，这时标记为「重启后生效」。
     func setEnabled(_ item: ServiceItem, _ enabled: Bool) {
         let target = "\(item.scope.domain)/\(item.label)"
-        let isApple = item.scope == .systemAgent || item.scope == .systemDaemon
-
-        var commands: [[String]] = [[Launchctl.path, enabled ? "enable" : "disable", target]]
-        if !isApple {
-            commands.append(enabled
-                ? [Launchctl.path, "bootstrap", item.scope.domain, item.plistURL.path]
-                : [Launchctl.path, "bootout", target])
-        }
-
-        let ok: Bool
-        if item.scope.needsAdmin {
-            let r = Shell.runAsAdmin(commands)
-            // 用户点了「取消」时 osascript 返回非零，忽略加载阶段的报错，只看整体
-            ok = r.ok
-            if !ok { lastError = "没有完成：\(r.output.trimmingCharacters(in: .whitespacesAndNewlines))" }
+        let q = Shell.shellQuote
+        let marker = "__LAUNCHY_STEP2_FAILED__"
+        let script: String
+        if enabled {
+            script = "\(q(Launchctl.path)) enable \(q(target)) && "
+                + "{ \(q(Launchctl.path)) bootstrap \(q(item.scope.domain)) \(q(item.plistURL.path)) 2>&1 || echo \(marker); }"
         } else {
-            let first = Shell.run(commands[0][0], Array(commands[0].dropFirst()))
-            ok = first.ok
-            // 加载/卸载失败（比如本来就没加载）不算错误
-            if commands.count > 1 { Shell.run(commands[1][0], Array(commands[1].dropFirst())) }
-            if !ok { lastError = "没有完成：\(first.output)" }
+            script = "\(q(Launchctl.path)) disable \(q(target)) && "
+                + "{ \(q(Launchctl.path)) bootout \(q(target)) 2>&1 || echo \(marker); }"
         }
 
-        if ok {
-            history.insert(ChangeRecord(date: Date(), label: item.label,
-                                        scope: item.scope.rawValue, disabled: !enabled), at: 0)
-            saveHistory()
+        let r = item.scope.needsAdmin ? Shell.runAsAdmin(script: script) : Shell.run("/bin/sh", ["-c", script])
+        guard r.ok else {
+            // 第一步就失败了（或者用户在密码框点了取消）
+            lastError = "没有完成：\(r.output.trimmingCharacters(in: .whitespacesAndNewlines))"
+            reload()
+            return
         }
+
+        if r.output.contains(marker) {
+            // 第二步失败。启用时「已经加载」也会报错，那其实没问题，只有系统服务才提示重启。
+            let isApple = item.scope == .systemAgent || item.scope == .systemDaemon
+            if isApple || !enabled { pendingReboot.insert(item.id) }
+        } else {
+            pendingReboot.remove(item.id)
+        }
+
+        history.insert(ChangeRecord(date: Date(), label: item.label,
+                                    scope: item.scope.rawValue, disabled: !enabled), at: 0)
+        saveHistory()
+        stateCache[item.id] = nil
         reload()
+    }
+
+    /// 立即重启电脑（会走系统正常的重启流程，未保存的文档会提示保存）
+    func restartNow() {
+        Shell.run("/usr/bin/osascript", ["-e", "tell application \"loginwindow\" to «event aevtrrst»"])
     }
 
     // MARK: - 恢复默认

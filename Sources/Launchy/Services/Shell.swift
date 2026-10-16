@@ -49,3 +49,14 @@ enum Shell {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
+
+extension Shell {
+    /// 以管理员身份执行一整段 shell 脚本（只弹一次密码框）。
+    @discardableResult
+    static func runAsAdmin(script: String) -> Result {
+        let escaped = script
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return run("/usr/bin/osascript", ["-e", "do shell script \"\(escaped)\" with administrator privileges"])
+    }
+}

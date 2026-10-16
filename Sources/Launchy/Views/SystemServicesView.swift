@@ -8,6 +8,7 @@ struct SystemServicesView: View {
     @State private var askAdvanced = false
     @State private var showHistory = false
     @State private var confirmRestore = false
+    @State private var confirmReboot = false
 
     private var filtered: [ServiceItem] {
         guard !search.isEmpty else { return store.systemItems }
@@ -33,8 +34,8 @@ struct SystemServicesView: View {
                         tint: .indigo,
                         title: item.friendlyName,
                         subtitle: item.detail,
-                        status: item.isDisabled ? "已停用" : "系统保护",
-                        statusColor: item.isDisabled ? .gray : .orange,
+                        status: "🔒 " + item.statusText,
+                        statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                         isOn: Binding(get: { !item.isDisabled },
                                       set: { store.setEnabled(item, $0) }),
                         toggleDisabled: !advancedMode)
@@ -45,6 +46,12 @@ struct SystemServicesView: View {
         .searchable(text: $search, prompt: "搜索服务，如 Siri、蓝牙…")
         .toolbar {
             ToolbarItemGroup {
+                if !store.pendingReboot.isEmpty {
+                    Button { confirmReboot = true } label: { Label("立即重启", systemImage: "restart") }
+                        .help("有 \(store.pendingReboot.count) 项修改需要重启后生效")
+                }
+                Button { store.refreshStates(force: true) } label: { Label("刷新状态", systemImage: "arrow.clockwise") }
+                    .disabled(store.isRefreshing)
                 Toggle(isOn: Binding(get: { advancedMode },
                                      set: { if $0 { askAdvanced = true } else { advancedMode = false } })) {
                     Text("高级模式")
@@ -67,6 +74,13 @@ struct SystemServicesView: View {
         } message: {
             Text("会把通过本软件停用的 \(store.pendingRestores.count) 个服务全部重新启用，可能需要输入密码，重启后完全生效。")
         }
+        .alert("现在重启电脑吗？", isPresented: $confirmReboot) {
+            Button("立即重启", role: .destructive) { store.restartNow() }
+            Button("稍后再说", role: .cancel) {}
+        } message: {
+            Text("有 \(store.pendingReboot.count) 项修改受系统保护，需要重启后才生效。重启前请先保存好手头的文件。")
+        }
+        .onAppear { store.refreshStates() }
         .sheet(isPresented: $showHistory) { HistoryView() }
         .errorAlert($store.lastError)
     }

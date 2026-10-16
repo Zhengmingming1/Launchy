@@ -61,7 +61,7 @@ struct SettingsView: View {
             Button("立即检查更新…") { updater.checkForUpdates() }
                 .disabled(!updater.isAvailable || !updater.canCheckForUpdates)
             if let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-                Text("当前版本：\(v)").font(.caption).foregroundStyle(.secondary)
+                Text("当前版本：\(v)　·　更新源：GitHub").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(24)

@@ -5,6 +5,7 @@ struct SystemServicesView: View {
     @EnvironmentObject var store: ServicesStore
     @AppStorage("advancedMode") private var advancedMode = false
     @State private var search = ""
+    @State private var selected: ServiceItem?
     @State private var askAdvanced = false
     @State private var showHistory = false
     @State private var confirmRestore = false
@@ -39,6 +40,8 @@ struct SystemServicesView: View {
                         isOn: Binding(get: { !item.isDisabled },
                                       set: { store.setEnabled(item, $0) }),
                         toggleDisabled: !advancedMode)
+                .contentShape(Rectangle())
+                .onTapGesture { selected = item }
             }
         }
         .navigationTitle("系统服务")
@@ -82,6 +85,7 @@ struct SystemServicesView: View {
         }
         .onAppear { store.refreshStates() }
         .sheet(isPresented: $showHistory) { HistoryView() }
+        .sheet(item: $selected) { ServiceDetailView(item: $0) }
         .errorAlert($store.lastError)
     }
 }

@@ -5,6 +5,7 @@ import AppKit
 struct StartupView: View {
     @EnvironmentObject var store: ServicesStore
     @State private var search = ""
+    @State private var selected: ServiceItem?
 
     private func items(_ scope: ServiceItem.Scope) -> [ServiceItem] {
         store.startupItems.filter { item in
@@ -30,7 +31,10 @@ struct StartupView: View {
                                         statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                                         isOn: Binding(get: { !item.isDisabled },
                                                       set: { store.setEnabled(item, $0) }))
+                                .contentShape(Rectangle())
+                                .onTapGesture { selected = item }
                                 .contextMenu {
+                                    Button("查看详情") { selected = item }
                                     Button("在访达中显示") {
                                         NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
                                     }
@@ -50,6 +54,7 @@ struct StartupView: View {
         .toolbar {
             Button { store.reload(); store.refreshStates(force: true) } label: { Label("刷新", systemImage: "arrow.clockwise") }
         }
+        .sheet(item: $selected) { ServiceDetailView(item: $0) }
         .errorAlert($store.lastError)
     }
 }

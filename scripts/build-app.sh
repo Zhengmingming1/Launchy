@@ -17,7 +17,13 @@ BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Launch
 echo "==> 组装 .app"
 rm -rf "$OUT" && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Launchy"
-[ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+# 图标：macOS 上优先用 iconutil 从 iconset 生成，失败就用仓库里现成的 .icns
+if command -v iconutil >/dev/null && [ -d Resources/AppIcon.iconset ]; then
+  iconutil -c icns Resources/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns" \
+    || cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+elif [ -f Resources/AppIcon.icns ]; then
+  cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

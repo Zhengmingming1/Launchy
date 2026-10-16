@@ -12,6 +12,8 @@ targets:
     platform: macOS
     sources:
       - Sources/Launchy
+      - path: Resources/AppIcon.icns
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: 启动台助手
@@ -20,6 +22,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleIconFile: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: 启动台助手
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         INFOPLIST_KEY_NSAppleEventsUsageDescription: 修改系统级服务时需要请求管理员权限。

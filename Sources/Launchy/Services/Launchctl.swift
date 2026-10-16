@@ -79,6 +79,7 @@ extension Launchctl {
         let loaded: Bool
         let running: Bool
         let pid: Int?
+        var lastExitCode: String? = nil
     }
 
     /// 用 `launchctl print <domain>/<label>` 查询状态。
@@ -88,16 +89,19 @@ extension Launchctl {
         guard r.ok else { return ServiceState(loaded: false, running: false, pid: nil) }
         var pid: Int?
         var running = false
+        var lastExit: String?
         for raw in r.output.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             // 只看第一层的字段，避免读到嵌套块里的同名字段
             if pid == nil, line.hasPrefix("pid = ") {
                 pid = Int(line.dropFirst("pid = ".count))
+            } else if lastExit == nil, line.hasPrefix("last exit code = ") {
+                lastExit = String(line.dropFirst("last exit code = ".count))
             } else if line.hasPrefix("state = ") {
                 running = running || line.hasSuffix("running")
             }
         }
-        return ServiceState(loaded: true, running: running || pid != nil, pid: pid)
+        return ServiceState(loaded: true, running: running || pid != nil, pid: pid, lastExitCode: lastExit)
     }
 
     /// 并发批量查询，几百个服务也只要一两秒

@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号（例如 0.1.0）"
+        description: "版本号（例如 0.3.0）"
         required: true
 permissions:
   contents: write
@@ -19,16 +19,54 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#v}"; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
-      - name: 编译、签名、打包 DMG
+
+      - name: 编译、签名、打包 DMG 和 ZIP
         run: scripts/build-app.sh "${{ steps.v.outputs.version }}" --dmg
+
+      - name: 用 EdDSA 私钥给更新包签名
+        id: sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          SIGN=$(find .build/artifacts -type f -name sign_update -path "*bin*" | head -1)
+          test -x "$SIGN"
+          # 私钥只通过标准输入传给 sign_update，不落盘、不打印
+          ZIP_SIG=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN" --ed-key-file - "dist/Launchy-$V.zip")
+          DMG_SIG=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN" --ed-key-file - "dist/Launchy-$V.dmg")
+          echo "zip=$ZIP_SIG" >> "$GITHUB_OUTPUT"
+          echo "dmg=$DMG_SIG" >> "$GITHUB_OUTPUT"
+          echo "ZIP: $ZIP_SIG"
+
+      - name: 生成 appcast.xml
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          NOTES="docs/release-notes/$V.md"
+          [ -f "$NOTES" ] || echo "- 问题修复和小改进" > "$NOTES"
+          python3 scripts/make-appcast.py "$V" "dist/Launchy-$V.zip" '${{ steps.sign.outputs.zip }}' "$NOTES" > dist/appcast.xml
+          cat dist/appcast.xml
+
       - name: 上传到 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v${{ steps.v.outputs.version }}"
-          DMG="dist/Launchy-${{ steps.v.outputs.version }}.dmg"
+          V="${{ steps.v.outputs.version }}"; TAG="v$V"
+          NOTES="docs/release-notes/$V.md"
+          printf '%s\n\n下载 DMG，把「启动台助手」拖进「应用程序」。首次打开如被拦截，请到「系统设置 → 隐私与安全性」点「仍要打开」。0.3.0 起支持自动更新。\n' "$(cat "$NOTES")" > /tmp/notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$DMG" --clobber
+            gh release upload "$TAG" dist/Launchy-$V.dmg dist/Launchy-$V.zip dist/appcast.xml --clobber
           else
-            gh release create "$TAG" "$DMG" --title "启动台助手 $TAG" --notes "下载 DMG，把「启动台助手」拖进「应用程序」。首次打开如被拦截，请到「系统设置 → 隐私与安全性」点「仍要打开」。" --target "${{ github.sha }}"
+            gh release create "$TAG" dist/Launchy-$V.dmg dist/Launchy-$V.zip dist/appcast.xml \
+              --title "启动台助手 $TAG" --notes-file /tmp/notes.md --target "${{ github.sha }}"
           fi
+
+      - name: 发布 appcast.xml 到 main 分支
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          cp dist/appcast.xml appcast.xml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git commit -m "appcast: v${{ steps.v.outputs.version }} [skip ci]" || exit 0
+          git push origin main

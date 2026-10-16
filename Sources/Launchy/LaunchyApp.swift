@@ -5,6 +5,7 @@ import SwiftUI
 struct LaunchyApp: App {
     @StateObject private var tasks = MyTasksStore()
     @StateObject private var services = ServicesStore()
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         WindowGroup("启动台助手") {
@@ -14,5 +15,10 @@ struct LaunchyApp: App {
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowStyle(.titleBar)
+        .commands { CheckForUpdatesCommand(updater: updater) }
+
+        Settings {
+            SettingsView(updater: updater)
+        }
     }
 }

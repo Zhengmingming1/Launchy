@@ -6,12 +6,12 @@
     <language>zh-CN</language>
     <item>
       <title>版本 0.3.0</title>
-      <pubDate>Fri, 16 Oct 2026 07:37:37 GMT</pubDate>
+      <pubDate>Fri, 16 Oct 2026 07:43:11 GMT</pubDate>
       <sparkle:version>0.3.0</sparkle:version>
       <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h3>启动台助手 0.3.0 更新内容</h3><ul><li>新增自动更新：菜单栏「启动台助手 → 检查更新…」，设置里可以关掉「自动检查更新」</li><li>新应用图标</li><li>开机自启动和系统服务支持查看详情、编辑和备份恢复</li></ul>]]></description>
-      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.0/Launchy-0.3.0.zip" type="application/octet-stream" sparkle:edSignature="lgjkMGtkcJMk3wIOIYMGTEGM2GUmjyIQhIhsO3ZqGPuh6AndM4Ma1uV0elursmyh1GboHHnNb/y9G7pFap7rBw==" length="2498591" />
+      <description><![CDATA[<h3>启动台助手 0.3.0 更新内容</h3><ul><li>新增自动更新：菜单栏「启动台助手 → 检查更新…」，设置里可以关掉「自动检查更新」</li><li>新应用图标</li><li>开机自启动和系统服务支持查看详情、编辑和备份恢复</li><li>开机自启动和系统服务列表显示所属软件的真实图标，找不到时按类型显示彩色图标</li></ul>]]></description>
+      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.0/Launchy-0.3.0.zip" type="application/octet-stream" sparkle:edSignature="HVmIPkBld+YjV7lzOjV/uJ8oSmjyzbDLwnu02a6jtOnEJRjN7Y7QpA8koFKEytyQiVhKMCkY1SEYRFyVkQR8Bw==" length="2515597" />
     </item>
   </channel>
 </rss>

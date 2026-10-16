@@ -56,7 +56,7 @@ struct SettingsView: View {
             Toggle("自动检查更新", isOn: Binding(get: { updater.automaticallyChecks },
                                                 set: { updater.automaticallyChecks = $0 }))
                 .disabled(!updater.isAvailable)
-            Text("每天检查一次。有新版本时会提示你，确认后才会安装。")
+            Text("每天检查一次。有新版本会先问你，你同意了才会安装。")
                 .font(.caption).foregroundStyle(.secondary)
             Button("立即检查更新…") { updater.checkForUpdates() }
                 .disabled(!updater.isAvailable || !updater.canCheckForUpdates)

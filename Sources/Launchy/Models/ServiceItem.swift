@@ -41,6 +41,8 @@ struct ServiceItem: Identifiable, Equatable, Sendable {
     var pid: Int?
     /// 已经停用 / 启用，但 SIP 不让立即卸载，需要重启才生效
     var pendingReboot = false
+    /// 配置里写的程序文件已经不存在（多半是软件卸载后留下的残留项），只对第三方服务检查
+    var programMissing = false
 
     /// 给人看的状态：运行中 / 已停止 / 已停用 / 重启后生效
     var statusText: String {
@@ -50,6 +52,15 @@ struct ServiceItem: Identifiable, Equatable, Sendable {
     }
 
     var id: String { scope.rawValue + "/" + label }
+
+    /// 程序路径是不是确定不存在了。只认绝对路径，而且只有系统明确回答「没有这个文件」才算，
+    /// 没权限读取等情况一律当作存在，宁可漏报也不误报。
+    static func isProgramMissing(_ program: String?) -> Bool {
+        guard let program, program.hasPrefix("/") else { return false }
+        var st = stat()
+        if stat(program, &st) == 0 { return false }
+        return errno == ENOENT || errno == ENOTDIR
+    }
 
     var friendlyName: String { FriendlyNames.name(for: label, program: program) }
     var detail: String { FriendlyNames.detail(for: label) ?? label }

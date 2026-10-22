@@ -16,8 +16,24 @@ struct StartupView: View {
         }
     }
 
+    /// 还开着、但程序已经不存在的自启动项
+    private var orphanCount: Int {
+        store.startupItems.filter { $0.programMissing && !$0.isDisabled }.count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            if orphanCount > 0 {
+                Label("发现 \(orphanCount) 个残留项：它们指向的程序已经被删除（多半是软件卸载后没清理干净），开机时只会白白报错。可以放心关掉，随时还能再打开。",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .padding([.horizontal, .top], 12)
+                    .accessibilityElement(children: .combine)
+            }
             List {
                 ForEach([ServiceItem.Scope.user, .allUsers, .daemon], id: \.self) { scope in
                     let list = items(scope)
@@ -28,8 +44,10 @@ struct StartupView: View {
                                         tint: .blue,
                                         title: item.friendlyName,
                                         subtitle: item.label,
-                                        status: item.statusText,
-                                        statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
+                                        status: item.programMissing && !item.isDisabled && !item.pendingReboot
+                                            ? "⚠️ 程序已删除" : item.statusText,
+                                        statusColor: item.pendingReboot || (item.programMissing && !item.isDisabled)
+                                            ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                                         isOn: Binding(get: { !item.isDisabled },
                                                       set: { store.setEnabled(item, $0) }),
                                         toggleDisabled: store.isWorking,

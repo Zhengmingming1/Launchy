@@ -80,8 +80,13 @@ final class ServicesStore: ObservableObject {
                 let overrides = scope.domain == Launchctl.systemDomain ? systemOverrides : userOverrides
                 // 以 launchctl 的覆盖设置为准；没有覆盖时才看 plist 里的 Disabled
                 let disabled = overrides[label] ?? (dict["Disabled"] as? Bool ?? false)
-                return ServiceItem(label: label, plistURL: url, scope: scope, program: program,
-                                   isDisabled: disabled, isRunning: false)
+                var item = ServiceItem(label: label, plistURL: url, scope: scope, program: program,
+                                       isDisabled: disabled, isRunning: false)
+                // 苹果自带的服务不做这项检查，避免误导用户去动系统服务
+                if scope != .systemAgent && scope != .systemDaemon {
+                    item.programMissing = ServiceItem.isProgramMissing(program)
+                }
+                return item
             }
         }
 

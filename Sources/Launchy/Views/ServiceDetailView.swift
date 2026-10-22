@@ -23,6 +23,15 @@ struct ServiceDetailView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if item.programMissing {
+                        Label("找不到它要运行的程序（\(item.program ?? "")）。多半是软件已经卸载，只留下了这个配置文件。它没法正常运行，可以放心关掉；确认不需要的话，也可以在访达中把配置文件移到废纸篓。",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                            .accessibilityElement(children: .combine)
+                    }
                     section("它是做什么的") { Text(info.description) }
                     section("什么时候运行") { Text(info.whenText) }
                     section("运行状态") { stateView }

@@ -9,8 +9,8 @@ enum ServiceEditor {
         case failed(String)
         var errorDescription: String? {
             switch self {
-            case .invalid(let s): return "格式不对，没有保存：\(s)"
-            case .failed(let s): return "保存失败：\(s)"
+            case .invalid(let s): return "格式不对，没有保存。\n\n\(s)"
+            case .failed(let s): return "保存失败。\n\n\(s)"
             }
         }
     }
@@ -85,7 +85,7 @@ enum ServiceEditor {
                 if !item.isDisabled { script += " && \(lc) bootstrap system \(q(dest))" }
             }
             let r = Shell.runAsAdmin(script: script)
-            guard r.ok else { throw EditError.failed(r.output) }
+            guard r.ok else { throw EditError.failed(FriendlyError.text(r.output)) }
             // /Library/LaunchAgents 属于用户会话，不用管理员就能重新加载
             if item.scope == .allUsers {
                 Launchctl.bootout(domain: item.scope.domain, label: item.label)

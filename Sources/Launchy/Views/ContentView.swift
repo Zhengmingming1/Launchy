@@ -115,3 +115,35 @@ struct ErrorAlert: ViewModifier {
 extension View {
     func errorAlert(_ message: Binding<String?>) -> some View { modifier(ErrorAlert(message: message)) }
 }
+
+/// 列表为空时的提示：读取中 / 没有内容 / 搜索没结果
+struct EmptyListOverlay: View {
+    let isLoading: Bool
+    let isEmpty: Bool
+    let query: String
+    let emptyText: String
+
+    var body: some View {
+        if isLoading {
+            ProgressView("正在读取…")
+        } else if isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: query.isEmpty ? "tray" : "magnifyingglass")
+                    .font(.system(size: 36)).foregroundStyle(.secondary)
+                Text(query.isEmpty ? emptyText : "没有找到和「\(query)」相关的项目")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+extension View {
+    /// 搜索防抖：停止输入 0.25 秒后才把 text 同步到 query，避免每敲一个字就重新过滤几百项
+    func debounced(_ text: String, into query: Binding<String>) -> some View {
+        task(id: text) {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            query.wrappedValue = text
+        }
+    }
+}

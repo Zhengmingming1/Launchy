@@ -8,11 +8,18 @@ final class MyTasksStore: ObservableObject {
 
     init() { reload() }
 
-    /// 重新扫描 ~/Library/LaunchAgents 里 com.launchy.* 的文件，并刷新运行状态
+    /// 重新扫描 ~/Library/LaunchAgents 里 com.launchy.* 的文件，并刷新运行状态（在后台执行）
     func reload() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tasks = Self.scan()
+            DispatchQueue.main.async { self.tasks = tasks }
+        }
+    }
+
+    nonisolated private static func scan() -> [MyTask] {
         let loaded = Launchctl.loadedJobs()
         let disabled = Launchctl.disabledLabels()
-        tasks = PlistIO.plists(in: Paths.userAgents)
+        return PlistIO.plists(in: Paths.userAgents)
             .filter { $0.lastPathComponent.hasPrefix(MyTask.labelPrefix) }
             .compactMap { url -> MyTask? in
                 guard let dict = PlistIO.read(url), var task = MyTask(plist: dict) else { return nil }
@@ -34,7 +41,7 @@ final class MyTasksStore: ObservableObject {
             if !task.isPaused {
                 Launchctl.enable(label: task.label)
                 let r = Launchctl.bootstrap(plist: task.plistURL)
-                if !r.ok { lastError = "任务已保存，但启动失败：\(r.output)" }
+                if !r.ok { lastError = "任务已保存，但没能启动。\n\n" + FriendlyError.text(r.output) }
             }
         } catch {
             lastError = "保存失败：\(error.localizedDescription)"
@@ -59,7 +66,7 @@ final class MyTasksStore: ObservableObject {
         } else {
             Launchctl.enable(label: task.label)
             let r = Launchctl.bootstrap(plist: task.plistURL)
-            if !r.ok { lastError = "恢复失败：\(r.output)" }
+            if !r.ok { lastError = "没能恢复这个任务。\n\n" + FriendlyError.text(r.output) }
         }
         reload()
     }

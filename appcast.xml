@@ -5,13 +5,13 @@
     <link>https://github.com/Zhengmingming1/Launchy</link>
     <language>zh-CN</language>
     <item>
-      <title>版本 0.3.1</title>
-      <pubDate>Fri, 16 Oct 2026 07:45:15 GMT</pubDate>
-      <sparkle:version>0.3.1</sparkle:version>
-      <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+      <title>版本 0.3.2</title>
+      <pubDate>Thu, 22 Oct 2026 01:33:33 GMT</pubDate>
+      <sparkle:version>0.3.2</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h3>启动台助手 0.3.1 更新内容</h3><ul><li>设置窗口里显示当前版本号</li><li>用来测试自动更新流程的小版本</li></ul>]]></description>
-      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.1/Launchy-0.3.1.zip" type="application/octet-stream" sparkle:edSignature="Kg7rVeK5S/IwnUzEI2HOfR6+NE66f/LW5XBu0EXOv3W2PGQSjddVPfg1zWEvLeXW6rhCQ6A66UxG3hVBaiDbCw==" length="2515611" />
+      <description><![CDATA[<h3>启动台助手 0.3.2 更新内容</h3><ul><li>打开「系统服务」快多了：以前要逐个查询几百次，现在一次读完，状态几乎瞬间出来</li><li>停用、启用服务时界面不会再卡住，等密码框的时候也能正常滚动</li><li>「重启后生效」的标记会一直保留到你真的重启电脑，关掉 Launchy 再打开也不会丢</li><li>第三方服务启用了但没能启动时，会明确告诉你原因，不再默默失败</li><li>编辑服务时，原来设置了多个运行时间（比如每周一、三、五）的不会再被覆盖，表单里会显示「保持原样」</li><li>停用状态的判断更准确，以系统实际记录的开关为准</li><li>苹果系统服务不再被配上奇怪的图标</li><li>报错信息改成了大白话，比如「你取消了输入密码，所以什么都没改」</li><li>搜索更顺滑，列表为空或搜不到时会有提示</li></ul>]]></description>
+      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.2/Launchy-0.3.2.zip" type="application/octet-stream" sparkle:edSignature="tC8lIEd62QxNEWOtCk8FWwQhqBV7OzTahD2/SxahUVIAMhwFBV26a40HidViTpxbANPJErRijErqYaPFk225AQ==" length="2600540" />
     </item>
   </channel>
 </rss>

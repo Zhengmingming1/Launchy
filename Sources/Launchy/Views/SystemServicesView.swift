@@ -5,6 +5,7 @@ struct SystemServicesView: View {
     @EnvironmentObject var store: ServicesStore
     @AppStorage("advancedMode") private var advancedMode = false
     @State private var search = ""
+    @State private var query = ""
     @State private var selected: ServiceItem?
     @State private var askAdvanced = false
     @State private var showHistory = false
@@ -12,10 +13,10 @@ struct SystemServicesView: View {
     @State private var confirmReboot = false
 
     private var filtered: [ServiceItem] {
-        guard !search.isEmpty else { return store.systemItems }
+        guard !query.isEmpty else { return store.systemItems }
         return store.systemItems.filter {
-            $0.friendlyName.localizedCaseInsensitiveContains(search)
-                || $0.label.localizedCaseInsensitiveContains(search)
+            $0.friendlyName.localizedCaseInsensitiveContains(query)
+                || $0.label.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -39,17 +40,23 @@ struct SystemServicesView: View {
                         statusColor: item.pendingReboot ? .orange : (item.isDisabled ? .gray : (item.isRunning ? .green : .secondary)),
                         isOn: Binding(get: { !item.isDisabled },
                                       set: { store.setEnabled(item, $0) }),
-                        toggleDisabled: !advancedMode,
+                        toggleDisabled: !advancedMode || store.isWorking,
                         iconView: AnyView(ServiceIconView(item: item)))
                 .contentShape(Rectangle())
                 .onTapGesture { selected = item }
+            }
+            .overlay {
+                EmptyListOverlay(isLoading: store.isLoading, isEmpty: filtered.isEmpty,
+                                 query: query, emptyText: "没有读取到系统服务。")
             }
         }
         .navigationTitle("系统服务")
         .navigationSubtitle("苹果自带的服务，默认只能查看")
         .searchable(text: $search, prompt: "搜索服务，如 Siri、蓝牙…")
+        .debounced(search, into: $query)
         .toolbar {
             ToolbarItemGroup {
+                if store.isWorking || store.isRefreshing { ProgressView().controlSize(.small) }
                 if !store.pendingReboot.isEmpty {
                     Button { confirmReboot = true } label: { Label("立即重启", systemImage: "restart") }
                         .help("有 \(store.pendingReboot.count) 项修改需要重启后生效")

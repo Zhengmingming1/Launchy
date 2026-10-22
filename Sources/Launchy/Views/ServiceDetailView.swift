@@ -99,9 +99,9 @@ struct ServiceDetailView: View {
         HStack {
             Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([item.plistURL]) }
             if info.editable {
-                Button("立即运行") { report(ServiceEditor.runNow(item), ok: "已经让它运行了一次。") }
+                Button("立即运行") { perform({ ServiceEditor.runNow(item) }, ok: "已经让它运行了一次。") }
                     .disabled(item.isDisabled)
-                Button("停止") { report(ServiceEditor.stop(item), ok: "已发送停止信号。如果它设置了常驻，可能会被系统重新拉起。") }
+                Button("停止") { perform({ ServiceEditor.stop(item) }, ok: "已发送停止信号。如果它设置了常驻，可能会被系统重新拉起。") }
                     .disabled(state?.running != true)
                 Button("编辑…") { showEditor = true }
             }
@@ -123,9 +123,15 @@ struct ServiceDetailView: View {
         Text(s).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
     }
 
-    private func report(_ r: Shell.Result, ok: String) {
-        message = r.ok ? ok : "没有成功：\(r.output.trimmingCharacters(in: .whitespacesAndNewlines))"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { refreshState() }
+    /// 在后台执行（可能会弹密码框），完成后提示结果并刷新状态
+    private func perform(_ work: @escaping () -> Shell.Result, ok: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = work()
+            DispatchQueue.main.async {
+                message = r.ok ? ok : FriendlyError.text(r.output)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { refreshState() }
+            }
+        }
     }
 
     private func refreshState() {
@@ -144,10 +150,11 @@ struct ServiceEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     enum ScheduleMode: String, CaseIterable, Identifiable {
-        case none, interval, daily
+        case keep, none, interval, daily
         var id: String { rawValue }
         var title: String {
             switch self {
+            case .keep: return "保持原样"
             case .none: return "不定时"
             case .interval: return "每隔一段时间"
             case .daily: return "每天固定时间"
@@ -166,6 +173,13 @@ struct ServiceEditView: View {
     @State private var error: String?
     @State private var backups: [URL] = []
 
+    /// 打开编辑器时的定时设置，用来判断用户有没有动过；没动过就原样保留
+    private let originalMode: ScheduleMode
+    private let originalMinutes: Int
+    private let originalTime: Date
+    /// 原配置里的定时比较复杂（多个时间点、按星期/日期），表单无法完整表示
+    private let hasComplexCalendar: Bool
+
     init(item: ServiceItem, info: ServiceInfo) {
         self.item = item
         self.info = info
@@ -176,11 +190,23 @@ struct ServiceEditView: View {
         var mode = ScheduleMode.none
         var minutes = 60
         var time = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
-        if let s = info.startInterval { mode = .interval; minutes = max(1, s / 60) }
-        else if let c = info.dict["StartCalendarInterval"] as? [String: Any], let h = c["Hour"] as? Int {
+        let calendar = info.dict["StartCalendarInterval"]
+        var complex = false
+        if let s = info.startInterval, calendar == nil {
+            mode = .interval; minutes = max(1, s / 60)
+        } else if let c = calendar as? [String: Any], let h = c["Hour"] as? Int,
+                  Set(c.keys).isSubset(of: ["Hour", "Minute"]), info.startInterval == nil {
             mode = .daily
             time = Calendar.current.date(bySettingHour: h, minute: c["Minute"] as? Int ?? 0, second: 0, of: Date()) ?? time
+        } else if calendar != nil || info.startInterval != nil {
+            // 多个时间点、按星期几等情况：表单里只读显示，保存时不改
+            mode = .keep
+            complex = true
         }
+        originalMode = mode
+        originalMinutes = minutes
+        originalTime = time
+        hasComplexCalendar = complex
         _mode = State(initialValue: mode)
         _intervalMinutes = State(initialValue: minutes)
         _time = State(initialValue: time)
@@ -207,9 +233,17 @@ struct ServiceEditView: View {
                     }
                     Toggle("开机登录时运行", isOn: $runAtLoad)
                     Picker("定时", selection: $mode) {
-                        ForEach(ScheduleMode.allCases) { Text($0.title).tag($0) }
+                        ForEach(ScheduleMode.allCases.filter { $0 != .keep || hasComplexCalendar }) {
+                            Text($0.title).tag($0)
+                        }
                     }
-                    if mode == .interval {
+                    if mode == .keep {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("现在的设置：\(info.whenText)")
+                            Text("这个任务的定时比较复杂，表单里没法完整编辑。保持原样就不会改动它；要改的话可以选别的方式，或者用下面的高级编辑。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else if mode == .interval {
                         Stepper("每隔 \(intervalMinutes) 分钟", value: $intervalMinutes, in: 1...10080)
                     } else if mode == .daily {
                         DatePicker("时间", selection: $time, displayedComponents: .hourAndMinute)
@@ -261,17 +295,33 @@ struct ServiceEditView: View {
         } else {
             dict["Program"] = program
         }
-        dict["RunAtLoad"] = runAtLoad
+        // 原来没有 RunAtLoad 且用户也没打开，就不额外写这个字段
+        if runAtLoad != info.runAtLoad || dict["RunAtLoad"] != nil {
+            dict["RunAtLoad"] = runAtLoad
+        }
+
+        // 定时没动过就原样保留（包括多个 StartCalendarInterval 的情况）
+        let scheduleUnchanged = mode == originalMode
+            && (mode != .interval || intervalMinutes == originalMinutes)
+            && (mode != .daily || sameMinute(time, originalTime))
+        if scheduleUnchanged || mode == .keep { return dict }
+
         dict.removeValue(forKey: "StartInterval")
         dict.removeValue(forKey: "StartCalendarInterval")
         switch mode {
-        case .none: break
+        case .keep, .none: break
         case .interval: dict["StartInterval"] = intervalMinutes * 60
         case .daily:
             let c = Calendar.current.dateComponents([.hour, .minute], from: time)
             dict["StartCalendarInterval"] = ["Hour": c.hour ?? 0, "Minute": c.minute ?? 0]
         }
         return dict
+    }
+
+    private func sameMinute(_ a: Date, _ b: Date) -> Bool {
+        let ca = Calendar.current.dateComponents([.hour, .minute], from: a)
+        let cb = Calendar.current.dateComponents([.hour, .minute], from: b)
+        return ca.hour == cb.hour && ca.minute == cb.minute
     }
 
     private func save() {

@@ -52,11 +52,12 @@ enum Launchctl {
         return map
     }
 
-    /// 解析 `launchctl print-disabled <domain>`，返回被停用的标签集合。
-    /// 不同系统版本输出可能是 `=> disabled` 或 `=> true`，两种都兼容。
-    static func disabledLabels(domain: String = userDomain) -> Set<String> {
+    /// 解析 `launchctl print-disabled <domain>`，得到「覆盖设置」：标签 -> 是否停用。
+    /// 这是 launchd 实际采用的开关状态，优先级高于 plist 里的 Disabled 字段。
+    /// 不同系统版本输出可能是 `=> disabled/enabled` 或 `=> true/false`，都兼容。
+    static func overrides(domain: String = userDomain) -> [String: Bool] {
         let result = Shell.run(path, ["print-disabled", domain])
-        var set = Set<String>()
+        var map: [String: Bool] = [:]
         for raw in result.output.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             guard line.hasPrefix("\""), let arrow = line.range(of: "=>") else { continue }
@@ -64,11 +65,15 @@ enum Launchctl {
                 .trimmingCharacters(in: .whitespaces)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             let value = line[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
-            if value.hasPrefix("disabled") || value.hasPrefix("true") {
-                set.insert(label)
-            }
+            if value.hasPrefix("disabled") || value.hasPrefix("true") { map[label] = true }
+            else if value.hasPrefix("enabled") || value.hasPrefix("false") { map[label] = false }
         }
-        return set
+        return map
+    }
+
+    /// 被停用的标签集合（只看覆盖设置）
+    static func disabledLabels(domain: String = userDomain) -> Set<String> {
+        Set(overrides(domain: domain).filter { $0.value }.keys)
     }
 }
 
@@ -104,14 +109,70 @@ extension Launchctl {
         return ServiceState(loaded: true, running: running || pid != nil, pid: pid, lastExitCode: lastExit)
     }
 
-    /// 并发批量查询，几百个服务也只要一两秒
+    /// 一次性读取整个域的服务列表：`launchctl print system` 或 `print gui/<uid>`。
+    /// 输出里有一段
+    ///     services = {
+    ///         123      0     com.foo.bar
+    ///           0      -     com.foo.baz
+    ///     }
+    /// 第一列是进程号（0 表示没运行），第二列是上次退出码，最后一列是标签。
+    /// 返回 nil 表示没解析到（比如系统改了输出格式），调用方需要退回逐个查询。
+    static func domainSnapshot(_ domain: String) -> [String: ServiceState]? {
+        let r = Shell.run(path, ["print", domain])
+        guard r.ok else { return nil }
+        var map: [String: ServiceState] = [:]
+        var inServices = false
+        for raw in r.output.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if !inServices {
+                if line.hasPrefix("services = {") { inServices = true }
+                continue
+            }
+            if line.hasPrefix("}") { break }
+            let cols = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+            guard cols.count >= 3, let pidValue = Int(cols[0]) else { continue }
+            let label = String(cols[cols.count - 1])
+            let pid = pidValue > 0 ? pidValue : nil
+            let exit = String(cols[1])
+            map[label] = ServiceState(loaded: true, running: pid != nil, pid: pid,
+                                      lastExitCode: exit == "-" ? nil : exit)
+        }
+        return map.isEmpty ? nil : map
+    }
+
+    /// 批量查询状态：每个域只调用一次 launchctl print；
+    /// 只有某个域解析失败时，才退回逐个 `launchctl print`，并且最多同时跑 8 个。
     static func states(_ items: [(domain: String, label: String)]) -> [ServiceState] {
+        var snapshots: [String: [String: ServiceState]?] = [:]
+        for domain in Set(items.map(\.domain)) { snapshots[domain] = domainSnapshot(domain) }
+
         var results = [ServiceState?](repeating: nil, count: items.count)
-        let lock = NSLock()
-        DispatchQueue.concurrentPerform(iterations: items.count) { i in
-            let s = state(domain: items[i].domain, label: items[i].label)
-            lock.lock(); results[i] = s; lock.unlock()
+        var fallback: [Int] = []
+        for (i, item) in items.enumerated() {
+            if let snapshot = snapshots[item.domain] ?? nil {
+                results[i] = snapshot[item.label] ?? ServiceState(loaded: false, running: false, pid: nil)
+            } else {
+                fallback.append(i)
+            }
+        }
+
+        if !fallback.isEmpty {
+            let lock = NSLock()
+            let queue = OperationQueue()
+            queue.maxConcurrentOperationCount = 8
+            for i in fallback {
+                queue.addOperation {
+                    let s = state(domain: items[i].domain, label: items[i].label)
+                    lock.lock(); results[i] = s; lock.unlock()
+                }
+            }
+            queue.waitUntilAllOperationsAreFinished()
         }
         return results.map { $0 ?? ServiceState(loaded: false, running: false, pid: nil) }
+    }
+
+    /// 某个服务现在是否已加载
+    static func isLoaded(domain: String, label: String) -> Bool {
+        Shell.run(path, ["print", "\(domain)/\(label)"]).ok
     }
 }

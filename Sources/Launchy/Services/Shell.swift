@@ -23,7 +23,9 @@ enum Shell {
             return Result(status: -1, output: error.localizedDescription)
         }
         // 先读完输出再等待，避免输出过多时管道被塞满卡死
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let handle = pipe.fileHandleForReading
+        let data = handle.readDataToEndOfFile()
+        try? handle.close()
         process.waitUntilExit()
         return Result(status: process.terminationStatus,
                       output: String(decoding: data, as: UTF8.self))

@@ -6,17 +6,23 @@ enum AppResolver {
     static func resolve(label: String, program: String?, extraBundleIDs: [String] = []) -> URL? {
         // 1. 程序路径里包含 .app，就往上找到最外层的那个 .app
         //    例如 /Applications/Foo.app/Contents/Library/LoginItems/Bar.app/... -> Foo.app
-        if let program, let range = program.range(of: ".app/") ?? program.range(of: ".app", options: .backwards),
-           range.upperBound <= program.endIndex {
+        if let program, let range = program.range(of: ".app/") {
             let path = String(program[..<range.lowerBound]) + ".app"
             if FileManager.default.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
         }
         // 2. 用 bundle id 查：先查 plist 里声明的，再按标签逐级去掉最后一段去猜
         var ids = extraBundleIDs
-        var parts = label.split(separator: ".").map(String.init)
-        while parts.count >= 2 {
-            ids.append(parts.joined(separator: "."))
-            parts.removeLast()
+        if label.hasPrefix("com.apple.") {
+            // 苹果的服务只认精确的 bundle id，不逐级猜，免得配错图标（比如都变成 Siri）
+            ids.append(label)
+        } else {
+            // 第三方：com.tencent.Lemon.monitor -> com.tencent.Lemon -> com.tencent，至少保留三段
+            var parts = label.split(separator: ".").map(String.init)
+            while parts.count >= 2 {
+                ids.append(parts.joined(separator: "."))
+                if parts.count <= 3 { break }
+                parts.removeLast()
+            }
         }
         for id in ids where id.contains(".") {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return url }

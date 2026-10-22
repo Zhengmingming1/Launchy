@@ -157,16 +157,16 @@ extension Launchctl {
         }
 
         if !fallback.isEmpty {
-            let lock = NSLock()
+            let box = ResultBox(results)
             let queue = OperationQueue()
             queue.maxConcurrentOperationCount = 8
             for i in fallback {
                 queue.addOperation {
-                    let s = state(domain: items[i].domain, label: items[i].label)
-                    lock.lock(); results[i] = s; lock.unlock()
+                    box.set(i, state(domain: items[i].domain, label: items[i].label))
                 }
             }
             queue.waitUntilAllOperationsAreFinished()
+            results = box.values
         }
         return results.map { $0 ?? ServiceState(loaded: false, running: false, pid: nil) }
     }
@@ -174,5 +174,22 @@ extension Launchctl {
     /// 某个服务现在是否已加载
     static func isLoaded(domain: String, label: String) -> Bool {
         Shell.run(path, ["print", "\(domain)/\(label)"]).ok
+    }
+}
+
+/// 多线程写结果用的小盒子，内部用锁保护，所以可以安全地跨线程共享
+private final class ResultBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Launchctl.ServiceState?]
+
+    init(_ initial: [Launchctl.ServiceState?]) { storage = initial }
+
+    func set(_ index: Int, _ value: Launchctl.ServiceState) {
+        lock.lock(); storage[index] = value; lock.unlock()
+    }
+
+    var values: [Launchctl.ServiceState?] {
+        lock.lock(); defer { lock.unlock() }
+        return storage
     }
 }

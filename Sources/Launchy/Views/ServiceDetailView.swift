@@ -124,7 +124,7 @@ struct ServiceDetailView: View {
     }
 
     /// 在后台执行（可能会弹密码框），完成后提示结果并刷新状态
-    private func perform(_ work: @escaping () -> Shell.Result, ok: String) {
+    private func perform(_ work: @escaping @Sendable () -> Shell.Result, ok: String) {
         DispatchQueue.global(qos: .userInitiated).async {
             let r = work()
             DispatchQueue.main.async {
@@ -171,6 +171,8 @@ struct ServiceEditView: View {
     @State private var rawText: String
     @State private var useRaw = false
     @State private var error: String?
+    /// 正在保存/恢复（可能在等管理员密码框）
+    @State private var isSaving = false
     @State private var backups: [URL] = []
 
     /// 打开编辑器时的定时设置，用来判断用户有没有动过；没动过就原样保留
@@ -270,9 +272,16 @@ struct ServiceEditView: View {
                     }
                 }
                 .frame(width: 140)
+                .disabled(isSaving)
                 Spacer()
+                if isSaving {
+                    ProgressView().controlSize(.small)
+                    Text("正在保存…").font(.callout).foregroundStyle(.secondary)
+                }
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                    .disabled(isSaving)
                 Button("保存并生效") { save() }.buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
             }
             Text("保存前会自动备份原文件到 ~/Library/Application Support/Launchy/backups。")
                 .font(.caption).foregroundStyle(.secondary)
@@ -325,21 +334,46 @@ struct ServiceEditView: View {
     }
 
     private func save() {
-        do {
-            if useRaw { try ServiceEditor.save(rawText: rawText, for: item) }
-            else { try ServiceEditor.save(buildDict(), for: item) }
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
+        // 表单内容在主线程里先整理好，真正的写文件、弹密码框、重新加载放到后台
+        let item = self.item
+        if useRaw {
+            let text = rawText
+            runInBackground { try ServiceEditor.save(rawText: text, for: item) }
+        } else {
+            // 先在主线程把字典转成 XML 文本，后台只传字符串，避免跨线程传递非 Sendable 的字典
+            do {
+                let data = try PropertyListSerialization.data(fromPropertyList: buildDict(), format: .xml, options: 0)
+                let text = String(decoding: data, as: UTF8.self)
+                runInBackground { try ServiceEditor.save(rawText: text, for: item) }
+            } catch {
+                self.error = "整理配置时出错了。\n\n" + FriendlyError.text(error.localizedDescription)
+            }
         }
     }
 
     private func restore(_ url: URL) {
-        do {
-            try ServiceEditor.apply(url, to: item)
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
+        let item = self.item
+        runInBackground { try ServiceEditor.apply(url, to: item) }
+    }
+
+    /// 在后台执行保存类操作，期间显示转圈、禁用按钮；成功就关闭，失败用大白话提示
+    private func runInBackground(_ work: @escaping @Sendable () throws -> Void) {
+        guard !isSaving else { return }
+        isSaving = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            var message: String?
+            do {
+                try work()
+            } catch let e as ServiceEditor.EditError {
+                message = e.localizedDescription
+            } catch {
+                message = FriendlyError.text(error.localizedDescription)
+            }
+            let finalMessage = message
+            DispatchQueue.main.async {
+                isSaving = false
+                if let finalMessage { self.error = finalMessage } else { dismiss() }
+            }
         }
     }
 

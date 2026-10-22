@@ -1,8 +1,8 @@
 import Foundation
 
 /// 「开机自启动」和「系统服务」页面里的一行
-struct ServiceItem: Identifiable, Equatable {
-    enum Scope: String {
+struct ServiceItem: Identifiable, Equatable, Sendable {
+    enum Scope: String, Sendable {
         case user        // ~/Library/LaunchAgents
         case allUsers    // /Library/LaunchAgents
         case daemon      // /Library/LaunchDaemons（需要管理员）

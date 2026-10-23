@@ -5,13 +5,13 @@
     <link>https://github.com/Zhengmingming1/Launchy</link>
     <language>zh-CN</language>
     <item>
-      <title>版本 0.3.2</title>
-      <pubDate>Thu, 22 Oct 2026 01:33:33 GMT</pubDate>
-      <sparkle:version>0.3.2</sparkle:version>
-      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <title>版本 0.3.3</title>
+      <pubDate>Fri, 23 Oct 2026 02:10:56 GMT</pubDate>
+      <sparkle:version>0.3.3</sparkle:version>
+      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h3>启动台助手 0.3.2 更新内容</h3><ul><li>打开「系统服务」快多了：以前要逐个查询几百次，现在一次读完，状态几乎瞬间出来</li><li>停用、启用服务时界面不会再卡住，等密码框的时候也能正常滚动</li><li>「重启后生效」的标记会一直保留到你真的重启电脑，关掉 Launchy 再打开也不会丢</li><li>第三方服务启用了但没能启动时，会明确告诉你原因，不再默默失败</li><li>编辑服务时，原来设置了多个运行时间（比如每周一、三、五）的不会再被覆盖，表单里会显示「保持原样」</li><li>停用状态的判断更准确，以系统实际记录的开关为准</li><li>苹果系统服务不再被配上奇怪的图标</li><li>报错信息改成了大白话，比如「你取消了输入密码，所以什么都没改」</li><li>搜索更顺滑，列表为空或搜不到时会有提示</li></ul>]]></description>
-      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.2/Launchy-0.3.2.zip" type="application/octet-stream" sparkle:edSignature="tC8lIEd62QxNEWOtCk8FWwQhqBV7OzTahD2/SxahUVIAMhwFBV26a40HidViTpxbANPJErRijErqYaPFk225AQ==" length="2600540" />
+      <description><![CDATA[<h3>启动台助手 0.3.3 更新内容</h3><ul><li>「开机自启动」会标出残留项了：软件已经卸载、但后台配置还留着的，会显示橙色「⚠️ 程序已删除」，页面顶部会提醒你一共有几个，可以放心关掉</li><li>点开残留项，详情页会用大白话说明是怎么回事、该怎么处理（关掉，或在访达里把配置文件移到废纸篓）</li><li>只检查第三方服务，苹果自带的服务不受影响；拿不准的一律不标，也不会自动删任何东西</li><li>编辑服务时点「保存」或「从备份恢复」，现在在后台进行，会显示转圈，界面不再卡住</li><li>内部代码更稳了，消除了一批并发相关的隐患</li></ul>]]></description>
+      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.3/Launchy-0.3.3.zip" type="application/octet-stream" sparkle:edSignature="v83SDytTASEtg1ftMm/6x1yCCMJrNGZigQGXeJ1v8SqRNrERtYkIxl7pH+UB9hR/7xNsyBjJl/pgXt0Kft4lAw==" length="2627744" />
     </item>
   </channel>
 </rss>

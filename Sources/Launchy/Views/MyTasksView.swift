@@ -29,6 +29,10 @@ struct MyTasksView: View {
                                 Button("删除", role: .destructive) { confirmDelete = task }
                             }
                             .onTapGesture(count: 2) { editing = task }
+                            .accessibilityAction(named: "修改") { editing = task }
+                            .accessibilityAction(named: "立即运行一次") { store.runNow(task) }
+                            .accessibilityAction(named: "查看运行记录") { showingLog = task }
+                            .accessibilityAction(named: "删除") { confirmDelete = task }
                     }
                 }
             }

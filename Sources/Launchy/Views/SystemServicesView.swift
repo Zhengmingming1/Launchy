@@ -44,6 +44,9 @@ struct SystemServicesView: View {
                         iconView: AnyView(ServiceIconView(item: item)))
                 .contentShape(Rectangle())
                 .onTapGesture { selected = item }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { selected = item }
+                .accessibilityAction(named: "查看详情") { selected = item }
             }
             .overlay {
                 EmptyListOverlay(isLoading: store.isLoading, isEmpty: filtered.isEmpty,

@@ -95,6 +95,22 @@ struct ItemRow: View {
                 .disabled(toggleDisabled)
         }
         .padding(.vertical, 6)
+        // VoiceOver：整行读成一句「名字，状态」，开关状态作为值，用「操作」菜单切换
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title)，\(spokenStatus)")
+        .accessibilityValue(isOn ? "开启" : "关闭")
+        .accessibilityHint(toggleDisabled ? "\(subtitle)。开关当前不可用" : "\(subtitle)。可在操作菜单中切换开关")
+        .accessibilityAction(named: isOn ? "关闭" : "开启") {
+            if !toggleDisabled { isOn.toggle() }
+        }
+    }
+
+    /// 去掉状态里的表情符号（⚠️、🔒），避免 VoiceOver 念出「警告符号」之类的噪音
+    private var spokenStatus: String {
+        let scalars = status.unicodeScalars.filter { s in
+            s.isASCII || !(s.properties.isEmojiPresentation || s.properties.isEmoji || s.properties.isVariationSelector)
+        }
+        return String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespaces)
     }
 }
 

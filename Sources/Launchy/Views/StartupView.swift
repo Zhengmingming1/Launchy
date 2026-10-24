@@ -54,6 +54,12 @@ struct StartupView: View {
                                         iconView: AnyView(ServiceIconView(item: item)))
                                 .contentShape(Rectangle())
                                 .onTapGesture { selected = item }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAction { selected = item }
+                                .accessibilityAction(named: "查看详情") { selected = item }
+                                .accessibilityAction(named: "在访达中显示") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
+                                }
                                 .contextMenu {
                                     Button("查看详情") { selected = item }
                                     Button("在访达中显示") {

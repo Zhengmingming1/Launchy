@@ -40,10 +40,23 @@ final class ServicesStore: ObservableObject {
     private let pendingURL = Paths.support.appendingPathComponent("pending-reboot.json")
     private let historyLimit = 500
 
+    /// 监听第三方自启动目录：有软件新装或删掉自启动项时自动刷新列表，不用手动点「刷新」。
+    /// 苹果系统目录（/System/Library）在只读系统卷上，平时不会变，不监听。
+    private var watcher: DirectoryWatcher?
+
     init() {
         loadHistory()
         loadPendingReboot()
         reload()
+        watcher = DirectoryWatcher([Paths.userAgents, Paths.globalAgents, Paths.globalDaemons]) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                // 正在开关服务时，结束后本来就会刷新
+                guard !self.isWorking else { return }
+                self.reload()
+            }
+        }
+        watcher?.start()
     }
 
     // MARK: - 扫描
@@ -60,6 +73,8 @@ final class ServicesStore: ObservableObject {
                 self.startupItems = startup
                 self.systemItems = system
                 self.isLoading = false
+                // 之前不存在的文件夹（比如第一次创建的 ~/Library/LaunchAgents）现在补上监听
+                self.watcher?.start()
                 self.applyCachedStates()
                 self.refreshStates()
             }

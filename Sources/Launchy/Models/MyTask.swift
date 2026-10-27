@@ -130,6 +130,25 @@ struct MyTask: Identifiable, Equatable {
     var isPaused = false
     var isLoaded = false
     var lastExitStatus: Int?
+    /// 本次加载以来运行过几次（重启电脑、暂停后恢复、保存修改后会从 0 重新数）
+    var runCount: Int?
+
+    /// 上次运行的结果，给人看的一句话；暂停或没加载时为 nil
+    var lastRunText: String? {
+        guard isLoaded, !isPaused else { return nil }
+        guard let runs = runCount, runs > 0 else {
+            // 拿不到次数时，至少根据退出码说一句
+            if let code = lastExitStatus, code != 0 { return "上次运行失败：" + TaskExitReason.text(code, action: action) }
+            return runCount == 0 ? "还没运行过，右键「立即运行一次」可以先试试" : nil
+        }
+        let times = "本次启用以来运行了 \(runs) 次"
+        guard let code = lastExitStatus else { return "正在运行 · " + times }
+        if code == 0 { return "上次运行成功 · " + times }
+        return "上次运行失败：" + TaskExitReason.text(code, action: action) + " · " + times
+    }
+
+    /// 上次运行是否失败
+    var lastRunFailed: Bool { !isPaused && (lastExitStatus ?? 0) != 0 }
 
     var id: String { label }
 
@@ -185,6 +204,22 @@ struct MyTask: Identifiable, Equatable {
         self.name = name
         self.action = action
         self.schedule = schedule
+    }
+}
+
+/// 把退出码翻译成人话
+enum TaskExitReason {
+    static func text(_ code: Int, action: TaskAction) -> String {
+        if code < 0 { return "被系统强制结束了（信号 \(-code)）" }
+        switch code {
+        case 1 where action.kind != .runScript:
+            return "没能打开，要打开的程序或文件可能被移走或删除了"
+        case 126: return "脚本没有执行权限"
+        case 127: return "脚本里有找不到的命令"
+        case 78: return "配置有问题，launchd 拒绝运行"
+        case 128...: return "被系统强制结束了（信号 \(code - 128)）"
+        default: return "退出码 \(code)，右键「查看运行记录」能看到详细信息"
+        }
     }
 }
 

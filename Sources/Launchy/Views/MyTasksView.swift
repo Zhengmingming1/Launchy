@@ -74,7 +74,7 @@ struct MyTasksView: View {
     private func row(_ task: MyTask) -> some View {
         let (status, color): (String, Color) = {
             if task.isPaused { return ("已暂停", .gray) }
-            if let code = task.lastExitStatus, code != 0 { return ("出错了", .orange) }
+            if task.lastRunFailed { return ("出错了", .orange) }
             return ("已启用", .green)
         }()
         return ItemRow(
@@ -85,7 +85,9 @@ struct MyTasksView: View {
             status: status,
             statusColor: color,
             isOn: Binding(get: { !task.isPaused },
-                          set: { store.setPaused(task, !$0) })
+                          set: { store.setPaused(task, !$0) }),
+            footnote: task.lastRunText,
+            footnoteColor: task.lastRunFailed ? .orange : .secondary
         )
     }
 

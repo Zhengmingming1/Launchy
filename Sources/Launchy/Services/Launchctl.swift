@@ -85,6 +85,8 @@ extension Launchctl {
         let running: Bool
         let pid: Int?
         var lastExitCode: String? = nil
+        /// 本次加载以来运行过几次（`runs = N`），解析不到为 nil
+        var runs: Int? = nil
     }
 
     /// 用 `launchctl print <domain>/<label>` 查询状态。
@@ -95,6 +97,7 @@ extension Launchctl {
         var pid: Int?
         var running = false
         var lastExit: String?
+        var runs: Int?
         for raw in r.output.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             // 只看第一层的字段，避免读到嵌套块里的同名字段
@@ -102,11 +105,13 @@ extension Launchctl {
                 pid = Int(line.dropFirst("pid = ".count))
             } else if lastExit == nil, line.hasPrefix("last exit code = ") {
                 lastExit = String(line.dropFirst("last exit code = ".count))
+            } else if runs == nil, line.hasPrefix("runs = ") {
+                runs = Int(line.dropFirst("runs = ".count))
             } else if line.hasPrefix("state = ") {
                 running = running || line.hasSuffix("running")
             }
         }
-        return ServiceState(loaded: true, running: running || pid != nil, pid: pid, lastExitCode: lastExit)
+        return ServiceState(loaded: true, running: running || pid != nil, pid: pid, lastExitCode: lastExit, runs: runs)
     }
 
     /// 一次性读取整个域的服务列表：`launchctl print system` 或 `print gui/<uid>`。

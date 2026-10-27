@@ -67,6 +67,9 @@ struct ItemRow: View {
     var toggleDisabled = false
     /// 有值时用它代替 SF Symbol 图标（服务列表用真实的 app 图标）
     var iconView: AnyView? = nil
+    /// 副标题下面再加一行小字（例如「上次运行成功」），为 nil 时不显示
+    var footnote: String? = nil
+    var footnoteColor: Color = .secondary
 
     var body: some View {
         HStack(spacing: 14) {
@@ -82,6 +85,9 @@ struct ItemRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.body.weight(.semibold))
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if let footnote {
+                    Text(footnote).font(.caption2).foregroundStyle(footnoteColor).lineLimit(1)
+                }
             }
             Spacer()
             Text(status)
@@ -99,10 +105,14 @@ struct ItemRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title)，\(spokenStatus)")
         .accessibilityValue(isOn ? "开启" : "关闭")
-        .accessibilityHint(toggleDisabled ? "\(subtitle)。开关当前不可用" : "\(subtitle)。可在操作菜单中切换开关")
+        .accessibilityHint(toggleDisabled ? "\(hintText)。开关当前不可用" : "\(hintText)。可在操作菜单中切换开关")
         .accessibilityAction(named: isOn ? "关闭" : "开启") {
             if !toggleDisabled { isOn.toggle() }
         }
+    }
+
+    private var hintText: String {
+        footnote.map { "\(subtitle)。\($0)" } ?? subtitle
     }
 
     /// 去掉状态里的表情符号（⚠️、🔒），避免 VoiceOver 念出「警告符号」之类的噪音

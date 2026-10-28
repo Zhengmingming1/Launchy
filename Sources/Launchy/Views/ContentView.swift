@@ -70,6 +70,8 @@ struct ItemRow: View {
     /// 副标题下面再加一行小字（例如「上次运行成功」），为 nil 时不显示
     var footnote: String? = nil
     var footnoteColor: Color = .secondary
+    /// 小字后面跟一个「怎么修」的小按钮（例如「重新选择…」），为 nil 时不显示
+    var footnoteButton: (title: String, action: () -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 14) {
@@ -86,7 +88,15 @@ struct ItemRow: View {
                 Text(title).font(.body.weight(.semibold))
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 if let footnote {
-                    Text(footnote).font(.caption2).foregroundStyle(footnoteColor).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(footnote).font(.caption2).foregroundStyle(footnoteColor).lineLimit(1)
+                        if let footnoteButton {
+                            Button(footnoteButton.title, action: footnoteButton.action)
+                                .buttonStyle(.link)
+                                .font(.caption2.weight(.semibold))
+                                .fixedSize()
+                        }
+                    }
                 }
             }
             Spacer()
@@ -112,7 +122,10 @@ struct ItemRow: View {
     }
 
     private var hintText: String {
-        footnote.map { "\(subtitle)。\($0)" } ?? subtitle
+        guard let footnote else { return subtitle }
+        // 有「怎么修」按钮时顺便告诉读屏用户：操作菜单里有同名的一项
+        let fix = footnoteButton.map { "。可在操作菜单中选择「\($0.title.trimmingCharacters(in: CharacterSet(charactersIn: "…")))」" } ?? ""
+        return "\(subtitle)。\(footnote)\(fix)"
     }
 
     /// 去掉状态里的表情符号（⚠️、🔒），避免 VoiceOver 念出「警告符号」之类的噪音
@@ -138,7 +151,25 @@ struct ErrorAlert: ViewModifier {
     }
 }
 
+/// 只在条件成立时才加的 VoiceOver 操作（避免菜单里出现用不上的项）
+struct ConditionalAccessibilityAction: ViewModifier {
+    let enabled: Bool
+    let name: String
+    let handler: () -> Void
+    func body(content: Content) -> some View {
+        if enabled {
+            content.accessibilityAction(named: name, handler)
+        } else {
+            content
+        }
+    }
+}
+
 extension View {
+    func optionalAccessibilityAction(if enabled: Bool, named name: String, _ handler: @escaping () -> Void) -> some View {
+        modifier(ConditionalAccessibilityAction(enabled: enabled, name: name, handler: handler))
+    }
+
     func errorAlert(_ message: Binding<String?>) -> some View { modifier(ErrorAlert(message: message)) }
 }
 

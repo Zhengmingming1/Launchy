@@ -53,6 +53,8 @@ struct TaskEditorView: View {
 
     private var action: TaskAction { .make(actionKind, path: path) }
     private var canSave: Bool { !path.isEmpty && amount > 0 }
+    /// 选中的文件已经找不到了（例如修改一个旧任务，而程序已被移走）
+    private var pathMissing: Bool { !path.isEmpty && ServiceItem.isProgramMissing(path) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -74,7 +76,15 @@ struct TaskEditorView: View {
                 Button("选择…", action: choosePath)
             }
             .padding(8)
-            .background(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+            .background(RoundedRectangle(cornerRadius: 6)
+                .stroke(pathMissing ? AnyShapeStyle(Color.orange) : AnyShapeStyle(HierarchicalShapeStyle.quaternary)))
+            if pathMissing {
+                Label("找不到「\((path as NSString).lastPathComponent)」了，它可能被移走或删除。请点「选择…」重新选一个，不然任务到时候会运行失败。",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Text("② 什么时候做？").font(.headline)
             ChoiceRow(options: TaskSchedule.Kind.allCases, selection: $scheduleKind,

@@ -26,6 +26,8 @@ final class MyTasksStore: ObservableObject {
                 task.isLoaded = loaded[task.label] != nil
                 task.lastExitStatus = loaded[task.label]?.lastExitStatus
                 task.isPaused = disabled.contains(task.label) || !task.isLoaded
+                // 和残留项检查同一套规则：只有系统明确说「没有这个文件」才算丢了
+                task.targetMissing = ServiceItem.isProgramMissing(task.action.path)
                 if task.isLoaded {
                     // 运行次数只有 `launchctl print <域>/<标签>` 才有；我的任务通常很少，逐个查不慢
                     task.runCount = Launchctl.state(domain: Launchctl.userDomain, label: task.label).runs

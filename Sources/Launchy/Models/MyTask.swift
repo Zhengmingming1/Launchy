@@ -132,9 +132,41 @@ struct MyTask: Identifiable, Equatable {
     var lastExitStatus: Int?
     /// 本次加载以来运行过几次（重启电脑、暂停后恢复、保存修改后会从 0 重新数）
     var runCount: Int?
+    /// 要打开 / 运行的程序、脚本或文件已经确定不存在了（被移走或删除）
+    var targetMissing = false
+
+    /// 目标文件给人看的名字，例如「微信」「备份」
+    var targetName: String {
+        URL(fileURLWithPath: action.path).deletingPathExtension().lastPathComponent
+    }
+
+    /// 出问题时建议用户做的下一步（「怎么修」按钮）
+    enum FixIt: Equatable {
+        case rechoose   // 目标文件找不到了：重新选择
+        case viewLog    // 运行失败：看运行记录里的详细原因
+
+        var title: String {
+            switch self {
+            case .rechoose: return "重新选择…"
+            case .viewLog: return "查看运行记录"
+            }
+        }
+    }
+
+    /// 当前最该做的修复动作；没问题时为 nil
+    var fixIt: FixIt? {
+        if targetMissing { return .rechoose }
+        if lastRunFailed { return .viewLog }
+        return nil
+    }
+
+    /// 是否需要用户注意（文件丢了，或者上次运行失败）
+    var needsAttention: Bool { targetMissing || lastRunFailed }
 
     /// 上次运行的结果，给人看的一句话；暂停或没加载时为 nil
     var lastRunText: String? {
+        // 文件丢了最要紧：不管暂停与否都先说清楚，免得恢复后才发现跑不起来
+        if targetMissing { return "找不到「\(targetName)」了，可能被移走或删除，重新选一下就好" }
         guard isLoaded, !isPaused else { return nil }
         guard let runs = runCount, runs > 0 else {
             // 拿不到次数时，至少根据退出码说一句
@@ -218,7 +250,7 @@ enum TaskExitReason {
         case 127: return "脚本里有找不到的命令"
         case 78: return "配置有问题，launchd 拒绝运行"
         case 128...: return "被系统强制结束了（信号 \(code - 128)）"
-        default: return "退出码 \(code)，右键「查看运行记录」能看到详细信息"
+        default: return "退出码 \(code)，运行记录里有详细信息"
         }
     }
 }

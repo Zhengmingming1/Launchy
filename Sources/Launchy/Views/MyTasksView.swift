@@ -33,6 +33,7 @@ struct MyTasksView: View {
                             .accessibilityAction(named: "立即运行一次") { store.runNow(task) }
                             .accessibilityAction(named: "查看运行记录") { showingLog = task }
                             .accessibilityAction(named: "删除") { confirmDelete = task }
+                            .optionalAccessibilityAction(if: task.fixIt == .rechoose, named: "重新选择") { editing = task }
                     }
                 }
             }
@@ -74,6 +75,7 @@ struct MyTasksView: View {
     private func row(_ task: MyTask) -> some View {
         let (status, color): (String, Color) = {
             if task.isPaused { return ("已暂停", .gray) }
+            if task.targetMissing { return ("找不到文件", .orange) }
             if task.lastRunFailed { return ("出错了", .orange) }
             return ("已启用", .green)
         }()
@@ -87,8 +89,17 @@ struct MyTasksView: View {
             isOn: Binding(get: { !task.isPaused },
                           set: { store.setPaused(task, !$0) }),
             footnote: task.lastRunText,
-            footnoteColor: task.lastRunFailed ? .orange : .secondary
+            footnoteColor: task.needsAttention ? .orange : .secondary,
+            footnoteButton: task.fixIt.map { fix in (fix.title, { perform(fix, on: task) }) }
         )
+    }
+
+    /// 「怎么修」按钮：文件丢了就打开修改窗口重新选，运行失败就打开运行记录
+    private func perform(_ fix: MyTask.FixIt, on task: MyTask) {
+        switch fix {
+        case .rechoose: editing = task
+        case .viewLog: showingLog = task
+        }
     }
 
     private var emptyState: some View {

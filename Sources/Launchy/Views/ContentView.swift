@@ -30,7 +30,7 @@ struct ContentView: View {
             List(selection: $page) {
                 Section("管理") {
                     ForEach(Page.allCases) { p in
-                        Label(p.title, systemImage: p.icon)
+                        SidebarRow(page: p, attention: attentionText(for: p))
                             .badge(count(for: p))
                             .tag(p)
                     }
@@ -52,6 +52,46 @@ struct ContentView: View {
         case .startup: return services.startupItems.count
         case .system: return services.systemItems.count
         }
+    }
+
+    /// 侧栏上的「需要处理」提醒：不用点进页面也知道哪里出了问题；没有问题时为 nil
+    private func attentionText(for page: Page) -> String? {
+        switch page {
+        case .myTasks:
+            let n = tasks.tasks.filter(\.needsAttention).count
+            return n > 0 ? "有 \(n) 个任务需要处理（文件找不到或上次运行失败）" : nil
+        case .startup:
+            // 已经关掉的残留项不算，免得用户处理完了提醒还一直在
+            let n = services.startupItems.filter { $0.programMissing && !$0.isDisabled }.count
+            return n > 0 ? "发现 \(n) 个残留自启动项，可以放心关掉" : nil
+        case .system:
+            return nil
+        }
+    }
+}
+
+/// 侧栏的一行：图标 + 名字，有问题时在右边加一个橙色感叹号（鼠标停上去会说明原因）
+struct SidebarRow: View {
+    let page: Page
+    let attention: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Label(page.title, systemImage: page.icon)
+            Spacer(minLength: 4)
+            if let attention {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .orange)
+                    .help(attention)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: attention != nil)
+        // VoiceOver：读「我的任务」，再读出提醒，例如「有 2 个任务需要处理」
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(page.title)
+        .accessibilityValue(attention ?? "")
     }
 }
 

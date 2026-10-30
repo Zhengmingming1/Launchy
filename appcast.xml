@@ -5,13 +5,13 @@
     <link>https://github.com/Zhengmingming1/Launchy</link>
     <language>zh-CN</language>
     <item>
-      <title>版本 0.3.3</title>
-      <pubDate>Fri, 23 Oct 2026 02:10:56 GMT</pubDate>
-      <sparkle:version>0.3.3</sparkle:version>
-      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
+      <title>版本 0.4.0</title>
+      <pubDate>Fri, 30 Oct 2026 02:06:00 GMT</pubDate>
+      <sparkle:version>0.4.0</sparkle:version>
+      <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h3>启动台助手 0.3.3 更新内容</h3><ul><li>「开机自启动」会标出残留项了：软件已经卸载、但后台配置还留着的，会显示橙色「⚠️ 程序已删除」，页面顶部会提醒你一共有几个，可以放心关掉</li><li>点开残留项，详情页会用大白话说明是怎么回事、该怎么处理（关掉，或在访达里把配置文件移到废纸篓）</li><li>只检查第三方服务，苹果自带的服务不受影响；拿不准的一律不标，也不会自动删任何东西</li><li>编辑服务时点「保存」或「从备份恢复」，现在在后台进行，会显示转圈，界面不再卡住</li><li>内部代码更稳了，消除了一批并发相关的隐患</li></ul>]]></description>
-      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.3.3/Launchy-0.3.3.zip" type="application/octet-stream" sparkle:edSignature="v83SDytTASEtg1ftMm/6x1yCCMJrNGZigQGXeJ1v8SqRNrERtYkIxl7pH+UB9hR/7xNsyBjJl/pgXt0Kft4lAw==" length="2627744" />
+      <description><![CDATA[<h3>启动台助手 0.4.0 更新内容</h3><ul><li>「我的任务」会告诉你任务跑得怎么样了：每一行下面多了一行小字，显示上次运行成功还是失败、启用以来跑了几次；失败时用大白话说原因，比如「脚本没有执行权限」「脚本里有找不到的命令」</li><li>任务出问题时直接给你修的办法：要打开的文件被移走或删掉了，会显示橙色「找不到文件」和「重新选择…」按钮；运行失败的任务旁边有「查看运行记录」按钮，一点就能看到报错</li><li>侧边栏会提醒你哪里需要处理：「我的任务」有任务出错、「开机自启动」有还开着的残留项时，名字旁边会出现一个橙色感叹号，鼠标停上去能看到原因</li><li>「开机自启动」页加了「全部 / 已开启 / 已停用 / 残留」筛选，后面带数量；残留提示条上的「只看残留项」一点就能切过去</li><li>「开机自启动」列表会自动刷新：新装或卸载的软件增删了自启动项，列表马上跟着变，不用再手动点「刷新」</li><li>支持 VoiceOver 读屏：每一行读成「名字，状态」，开关、修改、立即运行、查看运行记录等操作都能在 VoiceOver 的操作菜单里找到</li></ul>]]></description>
+      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.4.0/Launchy-0.4.0.zip" type="application/octet-stream" sparkle:edSignature="k5dDc2DAdasooubrlnGi7mQMYBRConXq7YRSYWkyZJF+96nHN5e9acBQsD4nGDSqpnLoIs5BEBrlYBWgCzvJBw==" length="2725144" />
     </item>
   </channel>
 </rss>

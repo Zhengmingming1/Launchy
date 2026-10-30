@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// 管理「我的任务」：增删改查 + 暂停/恢复。
 @MainActor
@@ -6,13 +7,53 @@ final class MyTasksStore: ObservableObject {
     @Published private(set) var tasks: [MyTask] = []
     @Published var lastError: String?
 
-    init() { reload() }
+    private var scanGeneration = 0
+    /// 监听 ~/Library/LaunchAgents：在访达里删掉、或用别的工具改了任务文件时，列表自动跟着变
+    private var watcher: DirectoryWatcher?
+    private var activationObserver: NSObjectProtocol?
+    private var lastActivationReload = Date.distantPast
+    /// 切回 Launchy 时最多每 3 秒刷新一次，来回切窗口不会反复扫描
+    private let activationThrottle: TimeInterval = 3
+
+    init() {
+        reload()
+        watcher = DirectoryWatcher([Paths.userAgents]) { [weak self] in
+            Task { @MainActor in self?.reload() }
+        }
+        watcher?.start()
+        // 任务在后台跑完后，「上次运行成功 / 失败」不会自己变；用户切回 Launchy 时顺手刷新一下，
+        // 看到的就是最新结果，不用再去点「刷新」
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reloadOnActivation() }
+        }
+    }
+
+    deinit {
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+    }
+
+    private func reloadOnActivation() {
+        guard Date().timeIntervalSince(lastActivationReload) >= activationThrottle else { return }
+        lastActivationReload = Date()
+        reload()
+    }
 
     /// 重新扫描 ~/Library/LaunchAgents 里 com.launchy.* 的文件，并刷新运行状态（在后台执行）
     func reload() {
+        scanGeneration += 1
+        let generation = scanGeneration
         DispatchQueue.global(qos: .userInitiated).async {
             let tasks = Self.scan()
-            DispatchQueue.main.async { self.tasks = tasks }
+            DispatchQueue.main.async {
+                // 期间又触发了新的扫描（例如保存后目录变化又刷新一次），丢掉旧结果，免得列表闪回旧状态
+                guard generation == self.scanGeneration else { return }
+                // 内容没变就不重新赋值，避免列表无谓重绘
+                if self.tasks != tasks { self.tasks = tasks }
+                // ~/Library/LaunchAgents 一开始不存在时，第一次建好任务后补上监听
+                self.watcher?.start()
+            }
         }
     }
 

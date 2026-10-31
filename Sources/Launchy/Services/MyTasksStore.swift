@@ -73,6 +73,11 @@ final class MyTasksStore: ObservableObject {
                     // 运行次数只有 `launchctl print <域>/<标签>` 才有；我的任务通常很少，逐个查不慢
                     task.runCount = Launchctl.state(domain: Launchctl.userDomain, label: task.label).runs
                 }
+                if task.lastRunFailed, !task.targetMissing, let code = task.lastExitStatus, (1..<128).contains(code) {
+                    // 被信号强制结束时日志里多半是旧内容，不拿来猜原因
+                    // 只在失败时读日志末尾几 KB，正常任务不多读任何文件
+                    task.logHint = LogDiagnosis.diagnose(logURL: task.logURL, action: task.action)
+                }
                 return task
             }
             .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }

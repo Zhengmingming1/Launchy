@@ -134,6 +134,8 @@ struct MyTask: Identifiable, Equatable {
     var runCount: Int?
     /// 要打开 / 运行的程序、脚本或文件已经确定不存在了（被移走或删除）
     var targetMissing = false
+    /// 上次运行失败时，从运行记录里认出的具体原因（认不出来为 nil）
+    var logHint: String?
 
     /// 目标文件给人看的名字，例如「微信」「备份」
     var targetName: String {
@@ -170,13 +172,18 @@ struct MyTask: Identifiable, Equatable {
         guard isLoaded, !isPaused else { return nil }
         guard let runs = runCount, runs > 0 else {
             // 拿不到次数时，至少根据退出码说一句
-            if let code = lastExitStatus, code != 0 { return "上次运行失败：" + TaskExitReason.text(code, action: action) }
+            if let code = lastExitStatus, code != 0 { return "上次运行失败：" + failureReason(code) }
             return runCount == 0 ? "还没运行过，右键「立即运行一次」可以先试试" : nil
         }
         let times = "本次启用以来运行了 \(runs) 次"
         guard let code = lastExitStatus else { return "正在运行 · " + times }
         if code == 0 { return "上次运行成功 · " + times }
-        return "上次运行失败：" + TaskExitReason.text(code, action: action) + " · " + times
+        return "上次运行失败：" + failureReason(code) + " · " + times
+    }
+
+    /// 失败原因：优先用运行记录里认出的具体问题，认不出来再按退出码解释
+    private func failureReason(_ code: Int) -> String {
+        logHint ?? TaskExitReason.text(code, action: action)
     }
 
     /// 上次运行是否失败

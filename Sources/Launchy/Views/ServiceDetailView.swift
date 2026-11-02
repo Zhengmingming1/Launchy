@@ -11,6 +11,9 @@ struct ServiceDetailView: View {
     @State private var state: Launchctl.ServiceState?
     @State private var message: String?
     @State private var showEditor = false
+    /// 程序签名（第三方服务才查，在后台读取）
+    @State private var signature: CodeSignature.Result?
+    @State private var signatureChecked = false
 
     init(item: ServiceItem) {
         self.item = item
@@ -33,6 +36,9 @@ struct ServiceDetailView: View {
                             .accessibilityElement(children: .combine)
                     }
                     section("它是做什么的") { Text(info.description) }
+                    if info.editable && !item.programMissing && info.program != nil {
+                        section("谁做的") { signatureView }
+                    }
                     section("什么时候运行") { Text(info.whenText) }
                     section("运行状态") { stateView }
                     section("技术信息") { techInfo }
@@ -48,11 +54,15 @@ struct ServiceDetailView: View {
             footer.padding(14)
         }
         .frame(width: 640, height: 600)
-        .onAppear(perform: refreshState)
+        .onAppear {
+            refreshState()
+            checkSignature()
+        }
         .sheet(isPresented: $showEditor, onDismiss: {
             info = ServiceInfo(item: item)
             store.reload()
             refreshState()
+            checkSignature()
         }) {
             ServiceEditView(item: item, info: info)
         }
@@ -83,6 +93,56 @@ struct ServiceDetailView: View {
             GridRow { Text("状态").foregroundStyle(.secondary); Text(stateText) }
             GridRow { Text("进程号").foregroundStyle(.secondary); Text(state?.pid.map(String.init) ?? "—") }
             GridRow { Text("上次退出码").foregroundStyle(.secondary); Text(state?.lastExitCode ?? "—") }
+        }
+    }
+
+    @ViewBuilder
+    private var signatureView: some View {
+        if let signature {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(signature.title,
+                      systemImage: signature.needsAttention ? "exclamationmark.triangle.fill"
+                                   : (signatureIsTrusted(signature.kind) ? "checkmark.seal.fill" : "questionmark.circle"))
+                    .foregroundStyle(signature.needsAttention ? Color.orange
+                                     : (signatureIsTrusted(signature.kind) ? Color.green : Color.secondary))
+                    .font(.body.weight(.medium))
+                Text(signature.explanation)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if signature.isScript {
+                    Text("检查的是它运行的脚本：\((signature.checkedPath as NSString).lastPathComponent)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else if signatureChecked {
+            Text("无法检查（程序路径不完整）").foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("正在检查签名…").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func signatureIsTrusted(_ kind: CodeSignature.Kind) -> Bool {
+        switch kind {
+        case .apple, .appStore, .developerID: return true
+        default: return false
+        }
+    }
+
+    private func checkSignature() {
+        guard info.editable, !item.programMissing else { return }
+        let program = info.program, args = info.arguments
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = CodeSignature.check(program: program, arguments: args)
+            DispatchQueue.main.async {
+                signature = r
+                signatureChecked = true
+            }
         }
     }
 

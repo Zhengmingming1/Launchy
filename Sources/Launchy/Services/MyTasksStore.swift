@@ -131,10 +131,17 @@ final class MyTasksStore: ObservableObject {
     }
 
     /// 读取日志的最后几千个字符
+    /// 运行记录末尾（只读最后 16 KB，日志再大也不会整个读进内存）
     func log(for task: MyTask) -> String {
-        guard let text = try? String(contentsOf: task.logURL, encoding: .utf8), !text.isEmpty else {
+        guard var text = LogDiagnosis.tail(of: task.logURL, bytes: 16 * 1024),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return "还没有输出。任务运行后，这里会显示它打印的内容和错误信息。"
         }
-        return String(text.suffix(6000))
+        // 从中间截断时，第一行多半是半截，去掉它
+        if let size = (try? task.logURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+           size > 16 * 1024, let firstBreak = text.firstIndex(where: \.isNewline) {
+            text = String(text[text.index(after: firstBreak)...])
+        }
+        return text
     }
 }

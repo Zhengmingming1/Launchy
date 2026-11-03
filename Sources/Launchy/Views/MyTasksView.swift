@@ -77,7 +77,10 @@ struct MyTasksView: View {
             TaskEditorView(task: task) { store.save($0) }
         }
         .sheet(item: $showingLog) { task in
-            LogView(title: task.name, text: store.log(for: task))
+            let text = store.log(for: task)
+            // 只有上次运行失败时才去认错误行，成功的任务不标橙
+            LogView(title: task.name, text: text,
+                    problem: task.lastRunFailed ? LogDiagnosis.problem(in: text, action: task.action) : nil)
         }
         .confirmationDialog("确定删除「\(confirmDelete?.name ?? "")」吗？",
                             isPresented: Binding(get: { confirmDelete != nil },
@@ -168,26 +171,103 @@ private extension View {
     }
 }
 
-/// 显示日志的小窗口
+/// 显示日志的小窗口。
+/// 认出了出错的那一行时：顶部用大白话说明原因，那一行标橙并自动滚过去；
+/// 没认出来时自动滚到最底下（最新的输出在最后）。
 struct LogView: View {
     let title: String
     let text: String
+    var problem: LogDiagnosis.Problem? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+
+    private struct Line: Identifiable {
+        let id: Int
+        let text: String
+    }
+
+    private var lines: [Line] {
+        text.components(separatedBy: .newlines).enumerated().map { Line(id: $0.offset, text: $0.element) }
+    }
+
+    /// 出错的那一行在第几行（同样的错误出现多次时取最后一次，也就是这次运行的）
+    private func problemIndex(in lines: [Line]) -> Int? {
+        guard let problem else { return nil }
+        return lines.last { $0.text.trimmingCharacters(in: .whitespaces) == problem.line }?.id
+    }
 
     var body: some View {
+        let lines = self.lines
+        let highlighted = problemIndex(in: lines)
         VStack(alignment: .leading, spacing: 12) {
             Text("「\(title)」的运行记录").font(.headline)
-            ScrollView {
-                Text(text)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let problem {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(problem.hint)
+                        if highlighted != nil {
+                            Text("出错的那一行已在下面用橙色标出。").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                .accessibilityElement(children: .combine)
             }
-            .padding(8)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-            HStack { Spacer(); Button("关闭") { dismiss() }.keyboardShortcut(.defaultAction) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(lines) { line in
+                            logLine(line, isProblem: line.id == highlighted)
+                        }
+                    }
+                    .padding(8)
+                }
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .onAppear {
+                    let target = highlighted ?? lines.last?.id
+                    guard let target else { return }
+                    // 等列表先排好版再滚动
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(target, anchor: highlighted == nil ? .bottom : .center)
+                    }
+                }
+            }
+            HStack {
+                Button(copied ? "已拷贝" : "拷贝全部") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    copied = true
+                }
+                .help("把运行记录拷贝下来，方便发给别人帮忙看")
+                Spacer()
+                Button("关闭") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
         }
         .padding(20)
-        .frame(width: 560, height: 400)
+        .frame(width: 600, height: problem == nil ? 400 : 460)
+    }
+
+    private func logLine(_ line: Line, isProblem: Bool) -> some View {
+        // 空行用一个空格占位，保持原来的行距
+        Text(line.text.isEmpty ? " " : line.text)
+            .font(.system(.caption, design: .monospaced))
+            .fontWeight(isProblem ? .semibold : .regular)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(isProblem ? Color.orange.opacity(0.25) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 3))
+            .overlay(alignment: .leading) {
+                if isProblem {
+                    Rectangle().fill(Color.orange).frame(width: 3)
+                }
+            }
+            .accessibilityLabel(isProblem ? "出错的一行：\(line.text)" : line.text)
+            .id(line.id)
     }
 }

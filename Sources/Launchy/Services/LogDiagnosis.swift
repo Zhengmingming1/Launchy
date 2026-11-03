@@ -15,24 +15,35 @@ enum LogDiagnosis {
         return diagnose(log: text, action: action)
     }
 
-    static func tail(of url: URL) -> String? {
+    static func tail(of url: URL, bytes: Int = tailBytes) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
-        let start = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
+        let start = size > UInt64(bytes) ? size - UInt64(bytes) : 0
         try? handle.seek(toOffset: start)
         guard let data = try? handle.readToEnd(), !data.isEmpty else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// 认出来的问题：给人看的一句话，以及运行记录里出错的那一行（原样，去掉首尾空格）
+    struct Problem: Equatable {
+        let hint: String
+        let line: String
+    }
+
     /// 从最后一行往前找，找到第一条认识的错误就返回
     static func diagnose(log: String, action: TaskAction) -> String? {
+        problem(in: log, action: action)?.hint
+    }
+
+    /// 和 diagnose 一样，但同时返回出错的那一行，运行记录窗口用它来标橙、滚动过去
+    static func problem(in log: String, action: TaskAction) -> Problem? {
         let lines = log.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .suffix(tailLines)
         for line in lines.reversed() {
-            if let hint = hint(for: line, action: action) { return hint }
+            if let hint = hint(for: line, action: action) { return Problem(hint: hint, line: line) }
         }
         return nil
     }

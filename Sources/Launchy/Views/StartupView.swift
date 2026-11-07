@@ -132,7 +132,7 @@ struct StartupView: View {
                                 .accessibilityAction(named: "查看详情") { selected = item }
                                 .optionalAccessibilityAction(if: item.newSince != nil, named: "知道了") {
                                     store.acknowledgeNew(item)
-                                })
+                                }
                                 .accessibilityAction(named: "在访达中显示") {
                                     NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
                                 }

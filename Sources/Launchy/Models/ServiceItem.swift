@@ -43,6 +43,8 @@ struct ServiceItem: Identifiable, Equatable, Sendable {
     var pendingReboot = false
     /// 配置里写的程序文件已经不存在（多半是软件卸载后留下的残留项），只对第三方服务检查
     var programMissing = false
+    /// 最近 7 天内第一次出现的时间（新装的软件加的自启动项），nil 表示早就有了。只对第三方服务记录
+    var newSince: Date?
 
     /// 给人看的状态：运行中 / 已停止 / 已停用 / 重启后生效
     var statusText: String {

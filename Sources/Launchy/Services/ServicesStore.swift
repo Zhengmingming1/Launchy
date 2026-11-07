@@ -43,6 +43,8 @@ final class ServicesStore: ObservableObject {
     /// 监听第三方自启动目录：有软件新装或删掉自启动项时自动刷新列表，不用手动点「刷新」。
     /// 苹果系统目录（/System/Library）在只读系统卷上，平时不会变，不监听。
     private var watcher: DirectoryWatcher?
+    /// 记住每个自启动项第一次出现的时间，用来标出「最近新增」
+    private var newTracker = NewItemTracker()
 
     init() {
         loadHistory()
@@ -70,6 +72,9 @@ final class ServicesStore: ObservableObject {
             DispatchQueue.main.async {
                 // 期间又触发了新的扫描，就丢掉这次旧结果
                 guard generation == self.scanGeneration else { return }
+                var startup = startup
+                let recent = self.newTracker.update(with: startup)
+                for i in startup.indices { startup[i].newSince = recent[startup[i].id] }
                 self.startupItems = startup
                 self.systemItems = system
                 self.isLoading = false
@@ -147,6 +152,14 @@ final class ServicesStore: ObservableObject {
                 self.isRefreshing = false
                 self.applyCachedStates()
             }
+        }
+    }
+
+    /// 用户看过这个新增项了，不再标为「最近新增」
+    func acknowledgeNew(_ item: ServiceItem) {
+        newTracker.acknowledge(item.id)
+        if let i = startupItems.firstIndex(where: { $0.id == item.id }) {
+            startupItems[i].newSince = nil
         }
     }
 

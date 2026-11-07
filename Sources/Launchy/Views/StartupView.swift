@@ -3,7 +3,7 @@ import AppKit
 
 /// 「开机自启动」顶部的分段筛选
 enum StartupFilter: String, CaseIterable, Identifiable {
-    case all, enabled, disabled, orphan
+    case all, enabled, disabled, orphan, recent
     var id: Self { self }
 
     var title: String {
@@ -12,6 +12,7 @@ enum StartupFilter: String, CaseIterable, Identifiable {
         case .enabled: return "已开启"
         case .disabled: return "已停用"
         case .orphan: return "残留"
+        case .recent: return "最近新增"
         }
     }
 
@@ -22,6 +23,7 @@ enum StartupFilter: String, CaseIterable, Identifiable {
         case .enabled: return "所有自启动项都已经关掉了。"
         case .disabled: return "还没有关掉任何自启动项。"
         case .orphan: return "没有残留项，卸载得很干净。"
+        case .recent: return "最近 7 天没有新冒出来的自启动项。"
         }
     }
 
@@ -32,6 +34,8 @@ enum StartupFilter: String, CaseIterable, Identifiable {
         case .disabled: return item.isDisabled
         // 残留项关掉后仍然留在这里，方便确认已经处理过
         case .orphan: return item.programMissing
+        // 最近 7 天新装的软件加进来的自启动项
+        case .recent: return item.newSince != nil
         }
     }
 }
@@ -86,7 +90,8 @@ struct StartupView: View {
                 .padding([.horizontal, .top], 12)
             }
             Picker("显示", selection: $filter) {
-                ForEach(StartupFilter.allCases) { f in
+                // 「最近新增」只在有新项（或正选着它）时出现，平时不占位置
+                ForEach(StartupFilter.allCases.filter { $0 != .recent || filter == .recent || count(.recent) > 0 }) { f in
                     Text("\(f.title) \(count(f))").tag(f)
                 }
             }
@@ -113,17 +118,29 @@ struct StartupView: View {
                                         isOn: Binding(get: { !item.isDisabled },
                                                       set: { store.setEnabled(item, $0) }),
                                         toggleDisabled: store.isWorking,
-                                        iconView: AnyView(ServiceIconView(item: item)))
+                                        iconView: AnyView(ServiceIconView(item: item)),
+                                        footnote: item.newSince.map {
+                                            "新出现的自启动项（\(NewItemTracker.describe($0)) 发现），不认识可以点开看看是谁做的"
+                                        },
+                                        footnoteColor: .blue,
+                                        footnoteButton: item.newSince == nil ? nil
+                                            : (title: "知道了", action: { store.acknowledgeNew(item) }))
                                 .contentShape(Rectangle())
                                 .onTapGesture { selected = item }
                                 .accessibilityAddTraits(.isButton)
                                 .accessibilityAction { selected = item }
                                 .accessibilityAction(named: "查看详情") { selected = item }
+                                .optionalAccessibilityAction(if: item.newSince != nil, named: "知道了") {
+                                    store.acknowledgeNew(item)
+                                })
                                 .accessibilityAction(named: "在访达中显示") {
                                     NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
                                 }
                                 .contextMenu {
                                     Button("查看详情") { selected = item }
+                                    if item.newSince != nil {
+                                        Button("不再标为新增") { store.acknowledgeNew(item) }
+                                    }
                                     Button("在访达中显示") {
                                         NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
                                     }

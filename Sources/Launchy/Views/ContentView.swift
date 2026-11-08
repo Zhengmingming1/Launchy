@@ -30,7 +30,7 @@ struct ContentView: View {
             List(selection: $page) {
                 Section("管理") {
                     ForEach(Page.allCases) { p in
-                        SidebarRow(page: p, attention: attentionText(for: p))
+                        SidebarRow(page: p, attention: attentionText(for: p), notice: noticeText(for: p))
                             .badge(count(for: p))
                             .tag(p)
                     }
@@ -68,17 +68,37 @@ struct ContentView: View {
             return nil
         }
     }
+
+    /// 侧栏上的「有新东西」提醒：最近新增的自启动项（蓝色小圆点，和橙色感叹号分开，一个是新来的、一个是有问题）
+    private func noticeText(for page: Page) -> String? {
+        switch page {
+        case .startup:
+            let n = services.startupItems.filter { $0.newSince != nil }.count
+            return n > 0 ? "有 \(n) 个最近新增的自启动项，点进去看看是谁加的" : nil
+        case .myTasks, .system:
+            return nil
+        }
+    }
 }
 
-/// 侧栏的一行：图标 + 名字，有问题时在右边加一个橙色感叹号（鼠标停上去会说明原因）
+/// 侧栏的一行：图标 + 名字；有问题时加橙色感叹号，有最近新增项时加蓝色小圆点（鼠标停上去会说明原因）
 struct SidebarRow: View {
     let page: Page
     let attention: String?
+    var notice: String? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             Label(page.title, systemImage: page.icon)
             Spacer(minLength: 4)
+            if let notice {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 8, height: 8)
+                    .help(notice)
+                    .transition(.opacity)
+                    .accessibilityHidden(true)
+            }
             if let attention {
                 Image(systemName: "exclamationmark.circle.fill")
                     .symbolRenderingMode(.palette)
@@ -88,10 +108,15 @@ struct SidebarRow: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: attention != nil)
-        // VoiceOver：读「我的任务」，再读出提醒，例如「有 2 个任务需要处理」
+        .animation(.easeInOut(duration: 0.2), value: notice != nil)
+        // VoiceOver：读页面名字，再读出提醒（橙色问题和蓝色新增分开说）
         .accessibilityElement(children: .combine)
         .accessibilityLabel(page.title)
-        .accessibilityValue(attention ?? "")
+        .accessibilityValue(spokenValue)
+    }
+
+    private var spokenValue: String {
+        [attention, notice].compactMap { $0 }.joined(separator: "。")
     }
 }
 

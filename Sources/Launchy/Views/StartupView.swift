@@ -47,6 +47,8 @@ struct StartupView: View {
     @State private var query = ""
     @State private var selected: ServiceItem?
     @State private var filter: StartupFilter = .all
+    /// 用户自己点过分段后，就不要再自动切到「最近新增」（避免正在看残留/全部时被抢走）
+    @State private var userChoseFilter = false
 
     private func matchesQuery(_ item: ServiceItem) -> Bool {
         query.isEmpty
@@ -81,7 +83,7 @@ struct StartupView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityElement(children: .combine)
                     if filter != .orphan {
-                        Button("只看残留项") { filter = .orphan }
+                        Button("只看残留项") { chooseFilter(.orphan) }
                             .controlSize(.small)
                     }
                 }
@@ -89,7 +91,7 @@ struct StartupView: View {
                 .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 .padding([.horizontal, .top], 12)
             }
-            Picker("显示", selection: $filter) {
+            Picker("显示", selection: filterBinding) {
                 // 「最近新增」只在有新项（或正选着它）时出现，平时不占位置
                 ForEach(StartupFilter.allCases.filter { $0 != .recent || filter == .recent || count(.recent) > 0 }) { f in
                     Text("\(f.title) \(count(f))").tag(f)
@@ -170,5 +172,28 @@ struct StartupView: View {
         }
         .sheet(item: $selected) { ServiceDetailView(item: $0) }
         .errorAlert($store.lastError)
+        .onAppear { suggestRecentFilterIfNeeded() }
+        // 第一次扫描还没完成就点进来时，等结果出来再决定要不要切到「最近新增」
+        .onChange(of: store.isLoading) { loading in
+            if !loading { suggestRecentFilterIfNeeded() }
+        }
+    }
+
+    /// 分段控件：用户亲手切换时记一笔，之后不再自动改筛选
+    private var filterBinding: Binding<StartupFilter> {
+        Binding(get: { filter }, set: { chooseFilter($0) })
+    }
+
+    private func chooseFilter(_ newValue: StartupFilter) {
+        filter = newValue
+        userChoseFilter = true
+    }
+
+    /// 有未确认的新增项时，点进这一页就直接看到它们（侧栏蓝点的配套动作）
+    private func suggestRecentFilterIfNeeded() {
+        guard !userChoseFilter, filter != .recent else { return }
+        if store.startupItems.contains(where: { $0.newSince != nil }) {
+            filter = .recent
+        }
     }
 }

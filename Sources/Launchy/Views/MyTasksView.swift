@@ -106,7 +106,14 @@ struct MyTasksView: View {
         return filtered.first { $0.id == id }
     }
 
+    /// 每分钟刷新一次，「下次：今天 14:00」过了点会自动变成明天
     private func row(_ task: MyTask) -> some View {
+        TimelineView(.everyMinute) { context in
+            rowContent(task, now: context.date)
+        }
+    }
+
+    private func rowContent(_ task: MyTask, now: Date) -> some View {
         let (status, color): (String, Color) = {
             if task.isPaused { return ("已暂停", .gray) }
             if task.targetMissing { return ("找不到文件", .orange) }
@@ -117,7 +124,7 @@ struct MyTasksView: View {
             icon: task.action.kind.icon,
             tint: .accentColor,
             title: task.name,
-            subtitle: task.summary,
+            subtitle: task.nextRunText(now: now).map { task.summary + $0 } ?? task.summary,
             status: status,
             statusColor: color,
             isOn: Binding(get: { !task.isPaused },

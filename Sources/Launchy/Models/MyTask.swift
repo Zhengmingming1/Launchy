@@ -115,6 +115,28 @@ enum TaskSchedule: Equatable {
             return "开机登录时"
         }
     }
+
+    /// 下一次按计划运行的时间。只有「每天固定时间」能算准：
+    /// 「每隔一段时间」从启用那一刻开始算，launchd 不告诉我们；「开机时」没有固定时间。
+    func nextDailyRun(after now: Date, calendar: Calendar = .current) -> Date? {
+        guard case .daily(let h, let m) = self else { return nil }
+        return calendar.nextDate(after: now, matching: DateComponents(hour: h, minute: m, second: 0),
+                                 matchingPolicy: .nextTime)
+    }
+
+    /// 编辑窗口里的预览：保存后什么时候第一次运行（新手最常见的疑问是「建好了怎么没动静」）
+    func firstRunPreview(now: Date = Date()) -> String {
+        switch self {
+        case .every(let m):
+            let gap = m % 60 == 0 ? "\(m / 60) 小时" : "\(m) 分钟"
+            return "保存后不会马上运行，大约 \(gap)后第一次运行，之后每隔 \(gap)一次。想先试试，可以在列表里右键「立即运行一次」。"
+        case .daily:
+            guard let next = nextDailyRun(after: now) else { return "到点时电脑在睡眠的话，醒来后会补上一次。" }
+            return "第一次会在\(RunTimeText.text(next, now: now))运行。到点时电脑在睡眠的话，醒来后会补上一次。"
+        case .atLogin:
+            return "保存后会马上运行一次，之后每次开机、登录到桌面时运行。"
+        }
+    }
 }
 
 /// 一个「我的任务」，对应 ~/Library/LaunchAgents/com.launchy.xxx.plist
@@ -186,6 +208,12 @@ struct MyTask: Identifiable, Equatable {
         logHint ?? TaskExitReason.text(code, action: action)
     }
 
+    /// 列表里显示的「下次：明天 09:00」；只有每天固定时间、并且正在启用的任务才有
+    func nextRunText(now: Date = Date()) -> String? {
+        guard isLoaded, !isPaused, !targetMissing, let next = schedule.nextDailyRun(after: now) else { return nil }
+        return "下次：" + RunTimeText.text(next, now: now)
+    }
+
     /// 上次运行是否失败
     var lastRunFailed: Bool { !isPaused && (lastExitStatus ?? 0) != 0 }
 
@@ -243,6 +271,19 @@ struct MyTask: Identifiable, Equatable {
         self.name = name
         self.action = action
         self.schedule = schedule
+    }
+}
+
+/// 把时间说成「今天 14:00」「明天 09:00」「11月12日 09:00」
+enum RunTimeText {
+    static func text(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let hm = calendar.dateComponents([.hour, .minute], from: date)
+        let clock = String(format: "%02d:%02d", hm.hour ?? 0, hm.minute ?? 0)
+        if calendar.isDate(date, inSameDayAs: now) { return "今天 " + clock }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           calendar.isDate(date, inSameDayAs: tomorrow) { return "明天 " + clock }
+        let md = calendar.dateComponents([.month, .day], from: date)
+        return "\(md.month ?? 0)月\(md.day ?? 0)日 " + clock
     }
 }
 

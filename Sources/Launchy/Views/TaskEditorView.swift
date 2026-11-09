@@ -92,7 +92,20 @@ struct TaskEditorView: View {
             scheduleDetail
 
             // 一句话总结，让人一眼看懂
-            Label(TaskSummary.make(action: action, schedule: schedule), systemImage: "checkmark.circle.fill")
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(TaskSummary.make(action: action, schedule: schedule))
+                    // 告诉用户保存后什么时候第一次运行，免得以为「建好了没反应」
+                    Text(original?.isPaused == true
+                         ? "这个任务现在是暂停的，打开开关恢复后才会按计划运行。"
+                         : schedule.firstRunPreview())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } icon: {
+                Image(systemName: "checkmark.circle.fill")
+            }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))

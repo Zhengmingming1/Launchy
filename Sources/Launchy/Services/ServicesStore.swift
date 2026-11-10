@@ -163,6 +163,16 @@ final class ServicesStore: ObservableObject {
         }
     }
 
+    /// 一次确认好几个新增项（「全部知道了」），只写一次记录文件、只刷新一次列表
+    func acknowledgeNew(_ items: [ServiceItem]) {
+        let ids = Set(items.filter { $0.newSince != nil }.map(\.id))
+        guard !ids.isEmpty else { return }
+        newTracker.acknowledge(Array(ids))
+        var updated = startupItems
+        for i in updated.indices where ids.contains(updated[i].id) { updated[i].newSince = nil }
+        startupItems = updated
+    }
+
     // MARK: - 开关
 
     private struct ToggleOutcome {

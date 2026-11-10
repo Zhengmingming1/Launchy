@@ -72,6 +72,11 @@ struct StartupView: View {
         store.startupItems.filter { $0.programMissing && !$0.isDisabled }.count
     }
 
+    /// 「最近新增」筛选下当前看得到的新增项（跟随搜索词）
+    private var visibleNewItems: [ServiceItem] {
+        store.startupItems.filter { $0.newSince != nil && matchesQuery($0) }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if orphanCount > 0 {
@@ -89,6 +94,25 @@ struct StartupView: View {
                 }
                 .padding(10)
                 .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .padding([.horizontal, .top], 12)
+            }
+            // 装一套软件常常同时加好几个自启动项：在「最近新增」里提供「全部知道了」，不用逐个点
+            if filter == .recent, visibleNewItems.count >= 2 {
+                let n = visibleNewItems.count
+                HStack(alignment: .center, spacing: 10) {
+                    Label("这 \(n) 个是最近 7 天新出现的自启动项。逐个看过、都认识的话，可以一次全部确认，蓝色提醒就会消失（不会关掉它们）。",
+                          systemImage: "sparkles")
+                        .font(.callout)
+                        .foregroundStyle(.blue)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .combine)
+                    Button("全部知道了") { acknowledgeAllVisible() }
+                        .controlSize(.small)
+                        .help("把这 \(n) 个都标为看过，不再显示蓝色提醒")
+                        .accessibilityHint("把这 \(n) 个自启动项都标为看过，不会关掉它们")
+                }
+                .padding(10)
+                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 .padding([.horizontal, .top], 12)
             }
             Picker("显示", selection: filterBinding) {
@@ -187,6 +211,16 @@ struct StartupView: View {
     private func chooseFilter(_ newValue: StartupFilter) {
         filter = newValue
         userChoseFilter = true
+    }
+
+    /// 「全部知道了」：确认当前看得到的新增项；都确认完了就回到「全部」，不留一个空列表
+    private func acknowledgeAllVisible() {
+        withAnimation {
+            store.acknowledgeNew(visibleNewItems)
+            if !store.startupItems.contains(where: { $0.newSince != nil }) {
+                filter = .all
+            }
+        }
     }
 
     /// 有未确认的新增项时，点进这一页就直接看到它们（侧栏蓝点的配套动作）

@@ -52,6 +52,16 @@ struct NewItemTracker {
         save()
     }
 
+    /// 一次确认好几个（装一套软件常常同时加好几个自启动项），只写一次文件
+    mutating func acknowledge(_ ids: [String]) {
+        var changed = false
+        for id in ids where firstSeen?[id] != nil {
+            firstSeen?[id] = .distantPast
+            changed = true
+        }
+        if changed { save() }
+    }
+
     private func save() {
         guard let firstSeen else { return }
         try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)

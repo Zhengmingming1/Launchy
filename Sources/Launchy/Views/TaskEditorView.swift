@@ -52,13 +52,15 @@ struct TaskEditorView: View {
     }
 
     private var action: TaskAction { .make(actionKind, path: path) }
-    private var canSave: Bool { saveBlockedReason == nil }
-    /// 为什么现在还不能保存（读屏用户看不到按钮变灰，要说出来）
-    private var saveBlockedReason: String? {
-        if path.isEmpty { return "还不能保存：先在「做什么」下面点「选择…」选一个文件" }
-        if scheduleKind == .every && amount <= 0 { return "还不能保存：间隔要大于 0" }
+    private var canSave: Bool { saveBlockedStep == nil }
+    /// 还差哪一步才能保存（nil 表示可以保存）。按钮旁的小字和读屏提示共用这一句。
+    private var saveBlockedStep: String? {
+        if path.isEmpty { return "先在「做什么」下面点「选择…」选一个文件" }
+        if scheduleKind == .every && amount <= 0 { return "间隔要大于 0，比如每隔 30 分钟" }
         return nil
     }
+    /// 为什么现在还不能保存（读屏用户看不到按钮变灰，要说出来）
+    private var saveBlockedReason: String? { saveBlockedStep.map { "还不能保存：\($0)" } }
     /// 选中的文件已经找不到了（例如修改一个旧任务，而程序已被移走）
     private var pathMissing: Bool { !path.isEmpty && ServiceItem.isProgramMissing(path) }
 
@@ -132,6 +134,17 @@ struct TaskEditorView: View {
                 .accessibilityElement(children: .combine)
 
             HStack {
+                // 按钮变灰时，在旁边直接写出还差哪一步，不让人对着灰按钮猜
+                if let step = saveBlockedStep {
+                    Label("还差一步：\(step)", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                        // 读屏会在「创建任务」按钮的提示里说出同一句，这里不重复念
+                        .accessibilityHidden(true)
+                }
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(original == nil ? "创建任务" : "保存") { save() }
@@ -140,6 +153,7 @@ struct TaskEditorView: View {
                     .disabled(!canSave)
                     .accessibilityHint(saveBlockedReason ?? "")
             }
+            .animation(.easeInOut(duration: 0.15), value: saveBlockedStep)
         }
         .padding(24)
         .frame(width: 600)

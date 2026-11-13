@@ -61,6 +61,19 @@ struct TaskEditorView: View {
     }
     /// 为什么现在还不能保存（读屏用户看不到按钮变灰，要说出来）
     private var saveBlockedReason: String? { saveBlockedStep.map { "还不能保存：\($0)" } }
+    /// 间隔太短时的温和提醒（不阻止保存）。少于 5 分钟很容易刷屏或费电。
+    private var shortIntervalNote: String? {
+        guard scheduleKind == .every, !unitIsHour, amount > 0, amount < 5 else { return nil }
+        let every = amount == 1 ? "每分钟" : "每隔 \(amount) 分钟"
+        switch actionKind {
+        case .openApp:
+            return "\(every)打开一次有点频繁：程序会一次次跳到最前面，关掉后也很快又会自己弹出来。如果只是想让它一直开着，选「开机时」就够了。"
+        case .openFile:
+            return "\(every)打开一次有点频繁：文件会一次次弹到最前面，可能打断你手上的事。没有特别需要的话，建议 5 分钟以上。"
+        case .runScript:
+            return "\(every)运行一次有点频繁，会让电脑更费电；脚本还没跑完时，下一次会被跳过。没有特别需要的话，建议 5 分钟以上。"
+        }
+    }
     /// 选中的文件已经找不到了（例如修改一个旧任务，而程序已被移走）
     private var pathMissing: Bool { !path.isEmpty && ServiceItem.isProgramMissing(path) }
 
@@ -111,6 +124,15 @@ struct TaskEditorView: View {
             ChoiceRow(options: TaskSchedule.Kind.allCases, selection: $scheduleKind,
                       title: { $0.title }, icon: { $0.icon }, groupName: "什么时候做")
             scheduleDetail
+            // 间隔太短时温和提醒一句，仍然可以保存
+            if let note = shortIntervalNote {
+                Label(note, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+                    .accessibilityLabel("提醒：\(note)")
+            }
 
             // 一句话总结，让人一眼看懂
             Label {
@@ -155,6 +177,7 @@ struct TaskEditorView: View {
             }
             .animation(.easeInOut(duration: 0.15), value: saveBlockedStep)
         }
+        .animation(.easeInOut(duration: 0.15), value: shortIntervalNote)
         .padding(24)
         .frame(width: 600)
         .onChange(of: actionKind) { _ in path = "" } // 换了类型，之前选的路径多半不适用

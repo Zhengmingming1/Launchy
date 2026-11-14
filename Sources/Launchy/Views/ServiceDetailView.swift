@@ -110,6 +110,12 @@ struct ServiceDetailView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let note = signature.notarizationNote {
+                    Label(note, systemImage: signature.notarized == true ? "checkmark.shield" : "info.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if signature.isScript {
                     Text("检查的是它运行的脚本：\((signature.checkedPath as NSString).lastPathComponent)")
                         .font(.caption)

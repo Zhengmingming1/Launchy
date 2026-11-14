@@ -28,6 +28,17 @@ enum CodeSignature {
         let checkedPath: String
         /// 检查的是参数里的脚本，而不是解释器本身
         let isScript: Bool
+        /// 有没有经过苹果公证（只对认证开发者的程序检查；其他情况为 nil）
+        var notarized: Bool? = nil
+
+        /// 公证情况的一句话（没有检查时为 nil）
+        var notarizationNote: String? {
+            switch notarized {
+            case true?: return "已通过苹果公证：苹果扫描过这个程序，没有发现恶意软件。"
+            case false?: return "查不到苹果公证记录。较老的软件或某些命令行工具常常这样，不一定有问题。"
+            case nil: return nil
+            }
+        }
 
         /// 一句话结论
         var title: String {
@@ -101,7 +112,21 @@ enum CodeSignature {
     /// 检查签名。读取 .app 时可能要几十毫秒，请在后台线程调用。
     static func check(program: String?, arguments: [String]) -> Result? {
         guard let t = target(program: program, arguments: arguments) else { return nil }
-        return Result(kind: kind(at: t.path), checkedPath: t.path, isScript: t.isScript)
+        let k = kind(at: t.path)
+        var result = Result(kind: k, checkedPath: t.path, isScript: t.isScript)
+        // 苹果自己的、App Store 的不需要公证；只给认证开发者的程序补一句
+        if case .developerID = k { result.notarized = isNotarized(at: t.path) }
+        return result
+    }
+
+    /// 是否经过苹果公证（相当于 `spctl --assess` 里的 Notarized Developer ID）。
+    /// 用签名要求「notarized」判断，借鉴 objective-see/WhatsYourSign 的思路，没有使用其代码。
+    /// 不强制联网吊销检查，避免卡住；请在后台线程调用。
+    static func isNotarized(at path: String) -> Bool {
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &staticCode) == errSecSuccess,
+              let code = staticCode else { return false }
+        return satisfies(code, "notarized")
     }
 
     static func kind(at path: String) -> Kind {

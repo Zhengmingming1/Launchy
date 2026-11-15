@@ -49,6 +49,8 @@ struct StartupView: View {
     @State private var filter: StartupFilter = .all
     /// 用户自己点过分段后，就不要再自动切到「最近新增」（避免正在看残留/全部时被抢走）
     @State private var userChoseFilter = false
+    /// 等用户确认后再移到废纸篓的残留项
+    @State private var pendingTrash: [ServiceItem] = []
 
     private func matchesQuery(_ item: ServiceItem) -> Bool {
         query.isEmpty
@@ -67,9 +69,16 @@ struct StartupView: View {
         store.startupItems.filter { f.matches($0) && matchesQuery($0) }.count
     }
 
-    /// 还开着、但程序已经不存在的自启动项
-    private var orphanCount: Int {
-        store.startupItems.filter { $0.programMissing && !$0.isDisabled }.count
+    /// 还开着、但程序已经不存在的自启动项（横幅说的就是这些，关掉的不算）
+    private var enabledOrphanItems: [ServiceItem] {
+        store.startupItems.filter { $0.programMissing && !$0.isDisabled }
+    }
+
+    private var orphanCount: Int { enabledOrphanItems.count }
+
+    /// 「残留」筛选下当前看得到的项（跟随搜索词，包含已经关掉的）
+    private var visibleOrphanItems: [ServiceItem] {
+        store.startupItems.filter { $0.programMissing && matchesQuery($0) }
     }
 
     /// 「最近新增」筛选下当前看得到的新增项（跟随搜索词）
@@ -79,18 +88,40 @@ struct StartupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if orphanCount > 0 {
+            // 正在看「残留」时改用下面那条操作条，避免两个按钮各清一批、数量对不上
+            if orphanCount > 0, filter != .orphan {
                 HStack(alignment: .center, spacing: 10) {
-                    Label("发现 \(orphanCount) 个残留项：它们指向的程序已经被删除（多半是软件卸载后没清理干净），开机时只会白白报错。可以放心关掉，随时还能再打开。",
+                    Label("发现 \(orphanCount) 个残留项：它们指向的程序已经被删除（多半是软件卸载后没清理干净），开机时只会白白报错。可以关掉，也可以把这些配置移到废纸篓（会先备份，需要时能从废纸篓或备份里找回来）。",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityElement(children: .combine)
-                    if filter != .orphan {
-                        Button("只看残留项") { chooseFilter(.orphan) }
-                            .controlSize(.small)
-                    }
+                    Button("只看残留项") { chooseFilter(.orphan) }
+                        .controlSize(.small)
+                    Button("移到废纸篓…") { pendingTrash = enabledOrphanItems }
+                        .controlSize(.small)
+                        .disabled(store.isWorking)
+                        .accessibilityHint("会先备份，再把这 \(orphanCount) 个残留配置移到废纸篓，不会永久删除，也不会动其他自启动项")
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .padding([.horizontal, .top], 12)
+            }
+            // 「残留」筛选：清理当前看得到的项（含已关掉的，并跟着搜索框走）
+            if filter == .orphan, !visibleOrphanItems.isEmpty {
+                let n = visibleOrphanItems.count
+                HStack(alignment: .center, spacing: 10) {
+                    Label("当前列表里有 \(n) 个残留配置（程序已经不在了，开着也只会报错）。可以把它们移到废纸篓（会先备份，需要时能从废纸篓或备份里找回来）。",
+                          systemImage: "trash")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .combine)
+                    Button("移到废纸篓…") { pendingTrash = visibleOrphanItems }
+                        .controlSize(.small)
+                        .disabled(store.isWorking)
+                        .accessibilityHint("会先备份，再把当前看得到的 \(n) 个残留配置移到废纸篓，不会永久删除，也不会动其他自启动项")
                 }
                 .padding(10)
                 .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
@@ -159,6 +190,11 @@ struct StartupView: View {
                                 .optionalAccessibilityAction(if: item.newSince != nil, named: "知道了") {
                                     store.acknowledgeNew(item)
                                 }
+                                .optionalAccessibilityAction(if: item.programMissing && !store.isWorking, named: "移到废纸篓") {
+                                    pendingTrash = [item]
+                                }
+                                .optionalAccessibilityHint(if: item.programMissing,
+                                                           "可以把这份残留配置移到废纸篓，会先备份，不会永久删除，也不会动其他自启动项")
                                 .accessibilityAction(named: "在访达中显示") {
                                     NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
                                 }
@@ -166,6 +202,10 @@ struct StartupView: View {
                                     Button("查看详情") { selected = item }
                                     if item.newSince != nil {
                                         Button("不再标为新增") { store.acknowledgeNew(item) }
+                                    }
+                                    if item.programMissing {
+                                        Button("移到废纸篓…", role: .destructive) { pendingTrash = [item] }
+                                            .disabled(store.isWorking)
                                     }
                                     Button("在访达中显示") {
                                         NSWorkspace.shared.activateFileViewerSelecting([item.plistURL])
@@ -196,6 +236,9 @@ struct StartupView: View {
         }
         .sheet(item: $selected) { ServiceDetailView(item: $0) }
         .errorAlert($store.lastError)
+        // 成功提示单独挂在一层上，免得和上面的报错框抢同一个 .alert
+        .background(Color.clear.noticeAlert($store.lastNotice))
+        .confirmTrashOrphans($pendingTrash, isWorking: store.isWorking) { store.cleanOrphans($0) }
         .onAppear { suggestRecentFilterIfNeeded() }
         // 第一次扫描还没完成就点进来时，等结果出来再决定要不要切到「最近新增」
         .onChange(of: store.isLoading) { loading in

@@ -230,12 +230,73 @@ struct ConditionalAccessibilityAction: ViewModifier {
     }
 }
 
+/// 只在条件成立时才加的 VoiceOver 提示
+struct ConditionalAccessibilityHint: ViewModifier {
+    let enabled: Bool
+    let hint: String
+    func body(content: Content) -> some View {
+        if enabled {
+            content.accessibilityHint(hint)
+        } else {
+            content
+        }
+    }
+}
+
+/// 普通提示（成功、取消等），标题就是正文，不说「出了点小问题」
+struct NoticeAlert: ViewModifier {
+    @Binding var message: String?
+    func body(content: Content) -> some View {
+        content.alert(message ?? "", isPresented: Binding(
+            get: { message != nil && !(message ?? "").isEmpty },
+            set: { if !$0 { message = nil } })) {
+            Button("知道了", role: .cancel) {}
+        }
+    }
+}
+
+/// 把残留配置移到废纸篓前的确认框
+struct TrashOrphansConfirm: ViewModifier {
+    @Binding var items: [ServiceItem]
+    var isWorking: Bool = false
+    let onConfirm: ([ServiceItem]) -> Void
+
+    func body(content: Content) -> some View {
+        // 用 confirmationDialog，避免和页面上已有的 .alert（报错、运行结果）互相抢
+        content.confirmationDialog(ServiceEditor.cleanConfirmTitle(for: items),
+                                   isPresented: Binding(
+                                    get: { !items.isEmpty },
+                                    set: { if !$0 { items = [] } }),
+                                   titleVisibility: .visible) {
+            Button("移到废纸篓", role: .destructive) {
+                let batch = items
+                onConfirm(batch)
+            }
+            .disabled(isWorking)
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(ServiceEditor.cleanConfirmMessage(for: items))
+        }
+    }
+}
+
 extension View {
     func optionalAccessibilityAction(if enabled: Bool, named name: String, _ handler: @escaping () -> Void) -> some View {
         modifier(ConditionalAccessibilityAction(enabled: enabled, name: name, handler: handler))
     }
 
+    func optionalAccessibilityHint(if enabled: Bool, _ hint: String) -> some View {
+        modifier(ConditionalAccessibilityHint(enabled: enabled, hint: hint))
+    }
+
     func errorAlert(_ message: Binding<String?>) -> some View { modifier(ErrorAlert(message: message)) }
+
+    func noticeAlert(_ message: Binding<String?>) -> some View { modifier(NoticeAlert(message: message)) }
+
+    func confirmTrashOrphans(_ items: Binding<[ServiceItem]>, isWorking: Bool = false,
+                             onConfirm: @escaping ([ServiceItem]) -> Void) -> some View {
+        modifier(TrashOrphansConfirm(items: items, isWorking: isWorking, onConfirm: onConfirm))
+    }
 }
 
 /// 列表为空时的提示：读取中 / 没有内容 / 搜索没结果

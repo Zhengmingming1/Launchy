@@ -14,6 +14,8 @@ struct ServiceDetailView: View {
     /// 程序签名（第三方服务才查，在后台读取）
     @State private var signature: CodeSignature.Result?
     @State private var signatureChecked = false
+    /// 等用户确认后再把这份残留配置移到废纸篓
+    @State private var pendingTrash: [ServiceItem] = []
 
     init(item: ServiceItem) {
         self.item = item
@@ -27,13 +29,21 @@ struct ServiceDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if item.programMissing {
-                        Label("找不到它要运行的程序（\(item.program ?? "")）。多半是软件已经卸载，只留下了这个配置文件。它没法正常运行，可以放心关掉；确认不需要的话，也可以在访达中把配置文件移到废纸篓。",
-                              systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                            .accessibilityElement(children: .combine)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("找不到它要运行的程序（\(item.program ?? "")）。多半是软件已经卸载，只留下了这个配置文件。它没法正常运行，可以关掉，也可以把这份残留配置移到废纸篓（会先备份，需要时能从废纸篓或备份里找回来）。",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityElement(children: .combine)
+                            if info.editable {
+                                Button("移到废纸篓…", role: .destructive) { pendingTrash = [item] }
+                                    .disabled(store.isWorking)
+                                    .accessibilityHint("会先备份，再移到废纸篓，不会永久删除，也不会动其他自启动项")
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
                     section("它是做什么的") { Text(info.description) }
                     if info.editable && !item.programMissing && info.program != nil {
@@ -68,6 +78,17 @@ struct ServiceDetailView: View {
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("知道了", role: .cancel) {}
+        }
+        .confirmTrashOrphans($pendingTrash, isWorking: store.isWorking) { items in
+            store.cleanOrphans(items) { result in
+                if result.trashed.contains(where: { $0.id == item.id }) {
+                    dismiss()
+                } else if let text = store.lastNotice, !text.isEmpty {
+                    // 还在这页，用本页的提示框说清楚；清掉 store 里的，避免关掉后再弹一次
+                    message = text
+                    store.lastNotice = nil
+                }
+            }
         }
     }
 

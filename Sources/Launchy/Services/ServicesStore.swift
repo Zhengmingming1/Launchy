@@ -23,6 +23,8 @@ final class ServicesStore: ObservableObject {
     @Published private(set) var systemItems: [ServiceItem] = []
     @Published private(set) var history: [ChangeRecord] = []
     @Published var lastError: String?
+    /// 成功或取消时的提示（不用「出了点小问题」那个框，避免把好事说成出错）
+    @Published var lastNotice: String?
     /// 有「重启后才生效」的修改
     @Published private(set) var pendingReboot: Set<String> = []
     @Published private(set) var isRefreshing = false
@@ -253,6 +255,26 @@ final class ServicesStore: ObservableObject {
     func restartNow() {
         DispatchQueue.global().async {
             Shell.run("/usr/bin/osascript", ["-e", "tell application \"loginwindow\" to «event aevtrrst»"])
+        }
+    }
+
+    // MARK: - 清理残留项
+
+    /// 先备份，再把残留配置移到废纸篓。在后台执行，/Library 下的项合并成一次密码框。
+    /// 完成后面会刷新列表；结果用 lastNotice 告诉用户。
+    func cleanOrphans(_ items: [ServiceItem], completion: ((ServiceEditor.CleanResult) -> Void)? = nil) {
+        guard !items.isEmpty, !isWorking else { return }
+        isWorking = true
+        lastNotice = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ServiceEditor.cleanOrphans(items)
+            DispatchQueue.main.async {
+                self.isWorking = false
+                let text = result.userMessage
+                if !text.isEmpty { self.lastNotice = text }
+                self.reload()
+                completion?(result)
+            }
         }
     }
 

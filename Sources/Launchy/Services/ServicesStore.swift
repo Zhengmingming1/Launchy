@@ -261,7 +261,7 @@ final class ServicesStore: ObservableObject {
     // MARK: - 清理残留项
 
     /// 先备份，再把残留配置移到废纸篓。在后台执行，/Library 下的项合并成一次密码框。
-    /// 完成后面会刷新列表；结果用 lastNotice 告诉用户。
+    /// 完成后会在访达中选中废纸篓里还在的文件，并刷新列表；结果用 lastNotice 告诉用户。
     func cleanOrphans(_ items: [ServiceItem], completion: ((ServiceEditor.CleanResult) -> Void)? = nil) {
         guard !items.isEmpty, !isWorking else { return }
         isWorking = true
@@ -270,6 +270,7 @@ final class ServicesStore: ObservableObject {
             let result = ServiceEditor.cleanOrphans(items)
             DispatchQueue.main.async {
                 self.isWorking = false
+                result.revealTrashedInFinder()
                 let text = result.userMessage
                 if !text.isEmpty { self.lastNotice = text }
                 self.reload()

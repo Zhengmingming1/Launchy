@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 extension ServiceEditor {
@@ -6,6 +7,8 @@ extension ServiceEditor {
         struct Item: Sendable {
             let id: String
             let name: String
+            /// 移到废纸篓之后的实际位置；没拿到或不在了就是 nil
+            let trashURL: URL?
         }
         struct Failure: Sendable {
             let id: String
@@ -29,6 +32,13 @@ extension ServiceEditor {
             } else if trashed.count > 1 {
                 parts.append("已把 \(trashed.count) 个残留配置移到废纸篓。")
             }
+            if !revealableURLs.isEmpty {
+                if revealableURLs.count == 1 {
+                    parts.append("访达已经打开并选中了这个文件，需要的话可以把它拖回去。")
+                } else {
+                    parts.append("访达已经打开并选中了这些文件，需要的话可以把它们拖回去。")
+                }
+            }
             if cancelled {
                 parts.append("你取消了输入密码，剩下的没有继续清理。")
             }
@@ -41,6 +51,21 @@ extension ServiceEditor {
                 }
             }
             return parts.joined(separator: "")
+        }
+
+        /// 废纸篓里现在还在、可以在访达中选中的文件
+        var revealableURLs: [URL] {
+            trashed.compactMap { item in
+                guard let url = item.trashURL else { return nil }
+                return FileManager.default.fileExists(atPath: url.path) ? url : nil
+            }
+        }
+
+        /// 用访达打开废纸篓并选中这些文件。没有可显示的文件时什么也不做。
+        func revealTrashedInFinder() {
+            let urls = revealableURLs
+            guard !urls.isEmpty else { return }
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
         }
     }
 
@@ -93,10 +118,11 @@ extension ServiceEditor {
         let adminItems = backedUp.filter { needsAdminToTrash($0) }
 
         for item in userItems {
-            if let failure = trashUserOrphan(item) {
+            var trashURL: URL?
+            if let failure = trashUserOrphan(item, trashURL: &trashURL) {
                 result.failures.append(failure)
             } else {
-                result.trashed.append(.init(id: item.id, name: item.friendlyName))
+                result.trashed.append(.init(id: item.id, name: item.friendlyName, trashURL: trashURL))
             }
         }
 
@@ -155,12 +181,13 @@ extension ServiceEditor {
     // MARK: - 当前用户目录
 
     /// 备份之后：先卸载（本来就没加载也没关系），清掉停用记录，再移到废纸篓
-    private static func trashUserOrphan(_ item: ServiceItem) -> CleanResult.Failure? {
+    private static func trashUserOrphan(_ item: ServiceItem, trashURL: inout URL?) -> CleanResult.Failure? {
         Launchctl.bootout(domain: item.scope.domain, label: item.label)
         Launchctl.enable(domain: item.scope.domain, label: item.label)
         do {
             var resulting: NSURL?
             try FileManager.default.trashItem(at: item.plistURL, resultingItemURL: &resulting)
+            trashURL = resulting as URL?
             return nil
         } catch {
             return .init(id: item.id, name: item.friendlyName,
@@ -181,6 +208,7 @@ extension ServiceEditor {
         try? FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
 
         var reserved = Set<String>()
+        var destinations: [String: URL] = [:]
         var script = "ok=0"
         let q = Shell.shellQuote
         let lc = q(Launchctl.path)
@@ -188,6 +216,7 @@ extension ServiceEditor {
 
         for item in items {
             let dest = uniqueURL(in: trash, matching: item.plistURL, reserved: &reserved)
+            destinations[item.id] = dest
             if item.scope == .daemon {
                 let target = "\(item.scope.domain)/\(item.label)"
                 script += " ; { \(lc) bootout \(q(target)) 2>/dev/null; true; }"
@@ -206,7 +235,9 @@ extension ServiceEditor {
         for item in items {
             let sourceGone = !FileManager.default.fileExists(atPath: item.plistURL.path)
             if sourceGone {
-                result.trashed.append(.init(id: item.id, name: item.friendlyName))
+                let dest = destinations[item.id]
+                let kept = dest.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+                result.trashed.append(.init(id: item.id, name: item.friendlyName, trashURL: kept))
                 // 「所有用户」的项属于当前登录会话，卸载不用管理员
                 if item.scope == .allUsers {
                     Launchctl.bootout(domain: item.scope.domain, label: item.label)

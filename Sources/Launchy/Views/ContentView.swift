@@ -23,11 +23,24 @@ enum Page: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject var tasks: MyTasksStore
     @EnvironmentObject var services: ServicesStore
-    @State private var page: Page? = .myTasks
+    /// 记住上次打开的侧栏页面；第一次打开或存了无效值时，回到「我的任务」
+    @AppStorage("selectedPage") private var storedPage = Page.myTasks.rawValue
+
+    /// List 的选中项是可选的：点空处会变成 nil。这时不要清掉已记住的页面，也继续显示上一页。
+    private var page: Binding<Page?> {
+        Binding(
+            get: { Page(rawValue: storedPage) ?? .myTasks },
+            set: { newValue in
+                if let newValue {
+                    storedPage = newValue.rawValue
+                }
+            }
+        )
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $page) {
+            List(selection: page) {
                 Section("管理") {
                     ForEach(Page.allCases) { p in
                         SidebarRow(page: p, attention: attentionText(for: p), notice: noticeText(for: p))
@@ -38,7 +51,7 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
         } detail: {
-            switch page ?? .myTasks {
+            switch page.wrappedValue ?? .myTasks {
             case .myTasks: MyTasksView()
             case .startup: StartupView()
             case .system: SystemServicesView()

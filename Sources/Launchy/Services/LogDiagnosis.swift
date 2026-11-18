@@ -25,10 +25,27 @@ enum LogDiagnosis {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// 认出来的问题：给人看的一句话，以及运行记录里出错的那一行（原样，去掉首尾空格）
+    /// 认出来的问题：给人看的一句话，出错的那一行，以及可以立刻做的下一步
     struct Problem: Equatable {
         let hint: String
         let line: String
+        /// 可以立刻做的下一步；认不出对应动作时为 nil
+        var fix: Fix? = nil
+
+        /// 运行记录窗口橙色说明旁的按钮
+        enum Fix: Equatable {
+            /// 被隐私保护拦住：打开「完全磁盘访问权限」
+            case openFullDiskAccess
+            /// 任务要打开或运行的文件找不到了：重新选择
+            case rechoose
+
+            var title: String {
+                switch self {
+                case .openFullDiskAccess: return "打开系统设置"
+                case .rechoose: return "重新选择…"
+                }
+            }
+        }
     }
 
     /// 从最后一行往前找，找到第一条认识的错误就返回
@@ -43,42 +60,78 @@ enum LogDiagnosis {
             .filter { !$0.isEmpty }
             .suffix(tailLines)
         for line in lines.reversed() {
-            if let hint = hint(for: line, action: action) { return Problem(hint: hint, line: line) }
+            if let found = classify(line, action: action) {
+                return Problem(hint: found.hint, line: line, fix: found.fix)
+            }
         }
         return nil
     }
 
-    private static func hint(for line: String, action: TaskAction) -> String? {
+    private struct Classified {
+        let hint: String
+        var fix: Problem.Fix? = nil
+    }
+
+    private static func classify(_ line: String, action: TaskAction) -> Classified? {
         // zsh：「脚本路径:行号: command not found: 命令」或「zsh: command not found: 命令」
         if let m = match(line, #"^(?:(.+?):(\d+)|zsh): command not found: (\S+)"#) {
             let cmd = m[2]
             let place = m[1].isEmpty ? "脚本里" : "脚本第 \(m[1]) 行"
             if let full = installedPath(of: cmd) {
-                return "\(place)的命令「\(cmd)」找不到。定时运行时系统不会自动去 \(dir(of: full)) 里找，把它改成完整路径 \(full) 就行"
+                return Classified(hint: "\(place)的命令「\(cmd)」找不到。定时运行时系统不会自动去 \(dir(of: full)) 里找，把它改成完整路径 \(full) 就行")
             }
-            return "\(place)的命令「\(cmd)」找不到，可能还没安装，或者名字拼错了"
+            return Classified(hint: "\(place)的命令「\(cmd)」找不到，可能还没安装，或者名字拼错了")
         }
         // zsh：「…: permission denied: 路径」
         if let m = match(line, #"(?:^|:\d+: |zsh: )permission denied: (.+)$"#) {
-            return "没有权限打开「\(name(of: m[0]))」，可以在访达里「显示简介」检查它的权限"
+            return Classified(hint: "没有权限打开「\(name(of: m[0]))」，可以在访达里「显示简介」检查它的权限")
         }
         // zsh / cd：「…: no such file or directory: 路径」
         if let m = match(line, #"no such file or directory: (.+)$"#) {
-            return "找不到「\(name(of: m[0]))」，它可能被移走、改名或删除了"
+            // 只在找不到的是这个任务自己的文件时给「重新选择」，脚本里提到的其他路径不算
+            return Classified(
+                hint: "找不到「\(name(of: m[0]))」，它可能被移走、改名或删除了",
+                fix: isTaskTarget(m[0], action: action) ? .rechoose : nil
+            )
         }
         // macOS 隐私保护拦住了（访问桌面、文稿、下载等文件夹时常见）
         if line.range(of: "Operation not permitted", options: .caseInsensitive) != nil {
-            return "被 macOS 的隐私保护拦住了：到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里允许 /bin/zsh 后再试"
+            return Classified(
+                hint: "被 macOS 的隐私保护拦住了：到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里允许 /bin/zsh 后再试",
+                fix: .openFullDiskAccess
+            )
         }
         // open -a：找不到程序
         if let m = match(line, #"Unable to find application named '(.+)'"#) {
-            return "找不到程序「\(m[0])」，可能已经卸载或改名，重新选一下就好"
+            return Classified(
+                hint: "找不到程序「\(m[0])」，可能已经卸载或改名，重新选一下就好",
+                fix: action.kind == .openApp ? .rechoose : nil
+            )
         }
         // open：文件不存在
         if let m = match(line, #"The file (.+) does not exist\."#) {
-            return "找不到「\(name(of: m[0]))」，它可能被移走、改名或删除了"
+            return Classified(
+                hint: "找不到「\(name(of: m[0]))」，它可能被移走、改名或删除了",
+                fix: (action.kind == .openFile || isTaskTarget(m[0], action: action)) ? .rechoose : nil
+            )
         }
         return nil
+    }
+
+    /// 日志里提到的路径是不是这个任务要打开 / 运行的那个文件
+    private static func isTaskTarget(_ reported: String, action: TaskAction) -> Bool {
+        let reported = reported.trimmingCharacters(in: CharacterSet(charactersIn: " '\""))
+        guard !reported.isEmpty, !action.path.isEmpty else { return false }
+        let a = URL(fileURLWithPath: reported).standardizedFileURL.path
+        let b = URL(fileURLWithPath: action.path).standardizedFileURL.path
+        if a == b { return true }
+        // 有的日志只写出文件名
+        if !reported.contains("/") {
+            let name = URL(fileURLWithPath: b).lastPathComponent
+            let stem = URL(fileURLWithPath: b).deletingPathExtension().lastPathComponent
+            return name == reported || stem == reported
+        }
+        return false
     }
 
     /// Homebrew 等常见位置里有没有这个命令（launchd 默认的 PATH 不包含它们）

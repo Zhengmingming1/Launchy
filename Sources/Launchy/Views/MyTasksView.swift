@@ -80,7 +80,12 @@ struct MyTasksView: View {
             let text = store.log(for: task)
             // 只有上次运行失败时才去认错误行，成功的任务不标橙
             LogView(title: task.name, text: text,
-                    problem: task.lastRunFailed ? LogDiagnosis.problem(in: text, action: task.action) : nil)
+                    problem: task.lastRunFailed ? LogDiagnosis.problem(in: text, action: task.action) : nil,
+                    onRechoose: {
+                        // 先关掉运行记录，再打开修改窗口，避免两个弹层叠在一起
+                        showingLog = nil
+                        DispatchQueue.main.async { editing = task }
+                    })
         }
         .confirmationDialog("确定删除「\(confirmDelete?.name ?? "")」吗？",
                             isPresented: Binding(get: { confirmDelete != nil },
@@ -185,6 +190,8 @@ struct LogView: View {
     let title: String
     let text: String
     var problem: LogDiagnosis.Problem? = nil
+    /// 任务自己的文件找不到时，「重新选择…」会关掉本窗口并打开修改任务
+    var onRechoose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
 
@@ -209,20 +216,29 @@ struct LogView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("「\(title)」的运行记录").font(.headline)
             if let problem {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(problem.hint)
-                        if highlighted != nil {
-                            Text("出错的那一行已在下面用橙色标出。").font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 10) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(problem.hint)
+                            if highlighted != nil {
+                                Text("出错的那一行已在下面用橙色标出。").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     }
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    if let fix = visibleFix(for: problem) {
+                        Button(fix.title) { perform(fix) }
+                            .controlSize(.small)
+                            .help(fixHelp(fix))
+                            .accessibilityHint(fixHint(fix))
+                    }
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-                .accessibilityElement(children: .combine)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -258,6 +274,40 @@ struct LogView: View {
         .frame(width: 600, height: problem == nil ? 400 : 460)
     }
 
+    private func visibleFix(for problem: LogDiagnosis.Problem) -> LogDiagnosis.Problem.Fix? {
+        guard let fix = problem.fix else { return nil }
+        // 没有回调时不显示「重新选择」，避免点了没反应
+        if fix == .rechoose, onRechoose == nil { return nil }
+        return fix
+    }
+
+    private func perform(_ fix: LogDiagnosis.Problem.Fix) {
+        switch fix {
+        case .openFullDiskAccess:
+            openFullDiskAccessSettings()
+        case .rechoose:
+            onRechoose?()
+        }
+    }
+
+    private func fixHelp(_ fix: LogDiagnosis.Problem.Fix) -> String {
+        switch fix {
+        case .openFullDiskAccess:
+            return "打开系统设置中的「完全磁盘访问权限」"
+        case .rechoose:
+            return "关掉这个窗口，重新选择要打开或运行的文件"
+        }
+    }
+
+    private func fixHint(_ fix: LogDiagnosis.Problem.Fix) -> String {
+        switch fix {
+        case .openFullDiskAccess:
+            return "打开系统设置，到「隐私与安全性」里的「完全磁盘访问权限」，允许 /bin/zsh 后再运行这个任务"
+        case .rechoose:
+            return "关闭运行记录，打开修改任务窗口，重新选择文件"
+        }
+    }
+
     private func logLine(_ line: Line, isProblem: Bool) -> some View {
         // 空行用一个空格占位，保持原来的行距
         Text(line.text.isEmpty ? " " : line.text)
@@ -276,5 +326,17 @@ struct LogView: View {
             }
             .accessibilityLabel(isProblem ? "出错的一行：\(line.text)" : line.text)
             .id(line.id)
+    }
+}
+
+/// 打开「系统设置 → 隐私与安全性 → 完全磁盘访问权限」。
+/// 先试 macOS 13 起的新地址，打不开再试原来的地址。
+private func openFullDiskAccessSettings() {
+    let candidates = [
+        "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+    ]
+    for item in candidates {
+        if let url = URL(string: item), NSWorkspace.shared.open(url) { return }
     }
 }

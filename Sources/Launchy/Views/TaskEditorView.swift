@@ -7,6 +7,7 @@ struct TaskEditorView: View {
     let original: MyTask?
     let onSave: (MyTask) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var name: String
     @State private var actionKind: TaskAction.Kind
@@ -15,6 +16,11 @@ struct TaskEditorView: View {
     @State private var amount: Int
     @State private var unitIsHour: Bool
     @State private var time: Date
+    /// 点了还不能保存的按钮时，让缺的那一项描边闪几下，把视线带过去。
+    @State private var blockedHighlightOn = false
+    @State private var blockedHighlightTask: Task<Void, Never>?
+    /// 间隔数字还没填对时，闪动的同时把光标放进输入框，方便直接改。
+    @FocusState private var amountFieldFocused: Bool
 
     init(task: MyTask?, onSave: @escaping (MyTask) -> Void) {
         self.original = task
@@ -76,6 +82,12 @@ struct TaskEditorView: View {
     }
     /// 选中的文件已经找不到了（例如修改一个旧任务，而程序已被移走）
     private var pathMissing: Bool { !path.isEmpty && ServiceItem.isProgramMissing(path) }
+    /// 当前闪动要标出「选择…」那一行（还没选文件）
+    private var shouldHighlightPath: Bool { blockedHighlightOn && path.isEmpty }
+    /// 当前闪动要标出间隔那一行（已选文件，但间隔不是正数）
+    private var shouldHighlightInterval: Bool {
+        blockedHighlightOn && !path.isEmpty && scheduleKind == .every && amount <= 0
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -111,6 +123,12 @@ struct TaskEditorView: View {
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 6)
                 .stroke(pathMissing ? AnyShapeStyle(Color.orange) : AnyShapeStyle(HierarchicalShapeStyle.quaternary)))
+            // 点灰按钮时叠一层更粗的橙色描边并闪动；已有「找不到文件」橙框时不会走到这里（那不阻止保存）
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.orange, lineWidth: shouldHighlightPath ? 2.5 : 1)
+                    .opacity(shouldHighlightPath ? 1 : 0)
+            )
             if pathMissing {
                 Label("找不到「\((path as NSString).lastPathComponent)」了，它可能被移走或删除。请点「选择…」重新选一个，不然任务到时候会运行失败。",
                       systemImage: "exclamationmark.triangle.fill")
@@ -160,7 +178,7 @@ struct TaskEditorView: View {
                 if let step = saveBlockedStep {
                     Label("还差一步：\(step)", systemImage: "info.circle")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(blockedHighlightOn ? Color.orange : Color.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
@@ -172,7 +190,9 @@ struct TaskEditorView: View {
                 Button(original == nil ? "创建任务" : "保存") { save() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .disabled(!canSave)
+                    // 看起来是灰的，但仍然能点；真正 disabled 会把点击吞掉，新手会以为卡住了
+                    .opacity(canSave ? 1 : 0.5)
+                    .saturation(canSave ? 1 : 0)
                     .accessibilityHint(saveBlockedReason ?? "")
             }
             .animation(.easeInOut(duration: 0.15), value: saveBlockedStep)
@@ -181,6 +201,14 @@ struct TaskEditorView: View {
         .padding(24)
         .frame(width: 600)
         .onChange(of: actionKind) { _ in path = "" } // 换了类型，之前选的路径多半不适用
+        .onChange(of: canSave) { ok in
+            // 补全之后立刻停掉闪动，避免描边留在已经填好的地方
+            if ok {
+                blockedHighlightTask?.cancel()
+                blockedHighlightOn = false
+            }
+        }
+        .onDisappear { blockedHighlightTask?.cancel() }
     }
 
     @ViewBuilder private var scheduleDetail: some View {
@@ -191,6 +219,7 @@ struct TaskEditorView: View {
                     .accessibilityHidden(true)
                 TextField("", value: $amount, format: .number)
                     .frame(width: 60).textFieldStyle(.roundedBorder)
+                    .focused($amountFieldFocused)
                     .accessibilityLabel("每隔多少\(unitIsHour ? "小时" : "分钟")运行一次")
                 Picker("", selection: $unitIsHour) {
                     Text("分钟").tag(false)
@@ -201,6 +230,12 @@ struct TaskEditorView: View {
                 Text("运行一次")
                     .accessibilityHidden(true)
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.orange, lineWidth: shouldHighlightInterval ? 2.5 : 1)
+                    .padding(-6)
+                    .opacity(shouldHighlightInterval ? 1 : 0)
+            )
         case .daily:
             DatePicker("每天的", selection: $time, displayedComponents: .hourAndMinute)
                 .frame(width: 200)
@@ -231,6 +266,11 @@ struct TaskEditorView: View {
     }
 
     private func save() {
+        // 按钮在未填完时仍可点，这里必须拦住，绝不能写出一份不完整的 plist
+        guard canSave else {
+            showBlockedField()
+            return
+        }
         var task = original ?? MyTask(name: "", action: action, schedule: schedule)
         task.name = name.trimmingCharacters(in: .whitespaces).isEmpty
             ? (path as NSString).lastPathComponent : name
@@ -238,6 +278,59 @@ struct TaskEditorView: View {
         task.schedule = schedule
         onSave(task)
         dismiss()
+    }
+
+    /// 表单还没填完：不保存、不关窗口，只是把缺的那一项闪几下描边，并让读屏读出原因。
+    private func showBlockedField() {
+        if let reason = saveBlockedReason {
+            NSAccessibility.post(
+                element: (NSApp.keyWindow ?? NSApp) as Any,
+                notification: .announcementRequested,
+                userInfo: [
+                    .announcement: reason,
+                    .priority: NSNumber(value: NSAccessibilityPriorityLevel.medium.rawValue)
+                ]
+            )
+        }
+        if !path.isEmpty, scheduleKind == .every, amount <= 0 {
+            amountFieldFocused = true
+        }
+        pulseBlockedField()
+    }
+
+    /// 描边闪 3 下；系统开了「减少动态效果」时改为亮一下再慢慢褪去，避免连闪。
+    private func pulseBlockedField() {
+        blockedHighlightTask?.cancel()
+        blockedHighlightOn = false
+        let reduced = reduceMotion
+        blockedHighlightTask = Task { @MainActor in
+            if reduced {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    blockedHighlightOn = true
+                }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    blockedHighlightOn = false
+                }
+                return
+            }
+            let half: UInt64 = 160_000_000
+            for i in 0..<3 {
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    blockedHighlightOn = true
+                }
+                try? await Task.sleep(nanoseconds: half)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    blockedHighlightOn = false
+                }
+                if i < 2 {
+                    try? await Task.sleep(nanoseconds: half)
+                }
+            }
+        }
     }
 }
 

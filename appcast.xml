@@ -5,13 +5,13 @@
     <link>https://github.com/Zhengmingming1/Launchy</link>
     <language>zh-CN</language>
     <item>
-      <title>版本 0.5.0</title>
-      <pubDate>Fri, 13 Nov 2026 02:03:36 GMT</pubDate>
-      <sparkle:version>0.5.0</sparkle:version>
-      <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+      <title>版本 0.6.0</title>
+      <pubDate>Fri, 20 Nov 2026 02:28:55 GMT</pubDate>
+      <sparkle:version>0.6.0</sparkle:version>
+      <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[<h3>启动台助手 0.5.0 更新内容</h3><ul><li>任务什么时候跑一目了然：「每天固定时间」的任务在「我的任务」里会显示「下次：今天 21:00」「下次：明天 09:00」，每分钟自动更新</li><li>新建或修改任务时，会预先告诉你保存后第一次什么时候运行：每隔一段时间的任务不会马上跑、开机时的任务会马上跑一次、睡眠错过的每日任务醒来会补上</li><li>保存按钮变灰时，旁边会直接用小字写出「还差一步」（比如还没选文件、间隔要大于 0），不用对着灰按钮猜</li><li>「开机自启动」会标出最近 7 天新冒出来的自启动项：蓝色小字提醒是什么时候发现的，附「知道了」按钮；多了一个「最近新增」筛选，有好几个时可以「全部知道了」一次确认（只是不再提醒，不会关掉它们）</li><li>侧边栏「开机自启动」旁边出现蓝色小圆点，说明有最近新增的自启动项，点进去直接看到它们</li><li>自启动项详情页新增「谁做的」：读取程序签名，用大白话说出是苹果、App Store、苹果认证的开发者（显示公司名），还是未签名 / 签名无效</li><li>任务失败时报错更好懂：能认出「命令找不到 / 没权限 / 文件不存在 / 隐私保护拦截」等常见问题，说出是哪条命令、哪个文件；运行记录窗口把出错的那一行标橙并自动滚过去，还能「拷贝全部」</li><li>「我的任务」支持键盘：选中后回车修改、空格暂停或恢复、删除键删除（会先确认）；右键菜单也能暂停 / 恢复</li><li>「我的任务」在任务文件变化、切回 Launchy 时自动刷新，不再显示过时的运行结果</li><li>新建 / 修改任务窗口支持 VoiceOver：会读出哪个选项已选择、每个输入框的名字，以及保存按钮为什么不能点</li></ul>]]></description>
-      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.5.0/Launchy-0.5.0.zip" type="application/octet-stream" sparkle:edSignature="bxG/glgfN4fJ+gx40YuXPUeZr2QaABdUI7Q68VLkmM5D7c5yM0V+lQGEMhiJOOn6UkWUn8ZTvdJm3Ihohq8EAw==" length="2954543" />
+      <description><![CDATA[<h3>启动台助手 0.6.0 更新内容</h3><ul><li>软件卸载后留下的残留自启动配置，可以先备份再移到废纸篓：只处理程序已经不在了的第三方项，不会永久删除；涉及 /Library 时会要一次密码。移走之后，访达会打开废纸篓并选中这些文件，方便当场确认或拖回去</li><li>详情页「谁做的」对认证开发者的程序会再补一句有没有经过苹果公证：已公证会说明苹果扫描过；查不到只用灰色说明，不吓人（后台检查，不强制联网）</li><li>下次打开会记住上次看的是「我的任务」「开机自启动」还是「系统服务」，直接回到那里；第一次使用仍从「我的任务」开始</li><li>运行记录认出是隐私保护拦住，或任务要打开的文件找不到了，会在橙色说明旁边直接给出「打开系统设置」或「重新选择…」，不用自己去翻</li><li>「每隔一段时间」设成少于 5 分钟时，会在间隔下面用橙色小字提醒（打开程序会反复弹出、打开文件会打断手上的事、脚本更费电且没跑完会跳过），只提醒，不阻止保存</li><li>新建或修改任务时，点看起来灰掉的「创建 / 保存」按钮，会让还没选文件或间隔没填对的那一行闪一下描边，把人带到要补的地方</li></ul>]]></description>
+      <enclosure url="https://github.com/Zhengmingming1/Launchy/releases/download/v0.6.0/Launchy-0.6.0.zip" type="application/octet-stream" sparkle:edSignature="XEZP7UITrsd/0rETkyIeS6+fx8I1X9Vh7YShYkZZoU2TwMQuy6nz/xbNZKbW8GBaYuEJ3u6y3NMrAkUXoqMxBA==" length="3082239" />
     </item>
   </channel>
 </rss>

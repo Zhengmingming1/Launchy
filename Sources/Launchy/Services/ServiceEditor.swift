@@ -27,20 +27,49 @@ enum ServiceEditor {
         }
     }
 
-    /// 把当前文件备份一份，文件名带时间
+    /// 清理残留项时写下的备份说明（和 .plist 备份成对，用来之后还原到原来的位置）
+    struct CleanupBackupMeta: Codable, Sendable {
+        var version: Int
+        var reason: String
+        var label: String
+        var name: String
+        var originalPath: String
+        var scope: String
+        var createdAt: String
+    }
+
+    /// 把当前文件备份一份，文件名带时间；同时写下原来的路径，清理后才能还原回去。
+    /// reason 为 "orphan-cleanup" 的才会出现在「从备份还原」列表里，编辑时的备份不会混进去。
     @discardableResult
-    static func backup(_ item: ServiceItem) throws -> URL {
+    static func backup(_ item: ServiceItem, reason: String = "edit") throws -> URL {
         try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
-        let dest = backupDir.appendingPathComponent("\(item.label)__\(f.string(from: Date())).plist")
+        let stamp = f.string(from: Date())
+        let dest = backupDir.appendingPathComponent("\(item.label)__\(stamp).plist")
         try FileManager.default.copyItem(at: item.plistURL, to: dest)
+        let meta = CleanupBackupMeta(
+            version: 1,
+            reason: reason,
+            label: item.label,
+            name: item.friendlyName,
+            originalPath: item.plistURL.path,
+            scope: item.scope.rawValue,
+            createdAt: stamp
+        )
+        do {
+            let jsonURL = dest.deletingPathExtension().appendingPathExtension("json")
+            try JSONEncoder().encode(meta).write(to: jsonURL, options: .atomic)
+        } catch {
+            try? FileManager.default.removeItem(at: dest)
+            throw error
+        }
         return dest
     }
 
     /// 这个服务的所有备份，最新的在前
     static func backups(for item: ServiceItem) -> [URL] {
         let files = (try? FileManager.default.contentsOfDirectory(at: backupDir, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.lastPathComponent.hasPrefix(item.label + "__") }
+        return files.filter { $0.pathExtension == "plist" && $0.lastPathComponent.hasPrefix(item.label + "__") }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
     }
 

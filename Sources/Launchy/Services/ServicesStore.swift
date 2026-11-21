@@ -279,6 +279,23 @@ final class ServicesStore: ObservableObject {
         }
     }
 
+    /// 把一份清理时留下的备份放回原来的位置。只还原文件，不自动开启；系统目录可能要一次密码。
+    func restoreCleanupBackup(_ backup: ServiceEditor.RestorableCleanup,
+                              completion: ((ServiceEditor.RestoreCleanupResult) -> Void)? = nil) {
+        guard !isWorking else { return }
+        isWorking = true
+        lastError = nil
+        lastNotice = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ServiceEditor.restoreCleanupBackup(backup)
+            DispatchQueue.main.async {
+                self.isWorking = false
+                self.reload()
+                completion?(result)
+            }
+        }
+    }
+
     // MARK: - 恢复默认
 
     /// 被本软件停用、到现在还没重新打开的服务

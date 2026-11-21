@@ -83,7 +83,7 @@ extension ServiceEditor {
         if items.count > 1 {
             parts.append("包括：" + items.map(\.friendlyName).joined(separator: "、") + "。")
         }
-        parts.append("会先备份一份，之后可以在废纸篓里找回来。不会永久删除，也不会动其他自启动项。")
+        parts.append("会先备份一份，之后可以在废纸篓里找回来，也可以在本软件里从备份还原。不会永久删除，也不会动其他自启动项。")
         if items.contains(where: needsAdminToTrash) {
             if items.count == 1, items[0].scope == .allUsers {
                 parts.append("这一项对所有用户生效，可能要输入一次登录密码。")
@@ -171,7 +171,7 @@ extension ServiceEditor {
         }
 
         do {
-            try backup(item)
+            try backup(item, reason: "orphan-cleanup")
         } catch {
             return fail("没能备份，所以没有移到废纸篓。")
         }
@@ -288,5 +288,185 @@ extension ServiceEditor {
     private static func isAdminCancelled(_ r: Shell.Result) -> Bool {
         let s = r.output.lowercased()
         return s.contains("user canceled") || s.contains("user cancelled") || s.contains("-128")
+    }
+
+    // MARK: - 从备份还原已清理的残留项
+
+    /// 一份可以还原的清理备份（原处的配置已经不在了）
+    struct RestorableCleanup: Identifiable, Equatable, Sendable {
+        let backupURL: URL
+        let label: String
+        let name: String
+        let originalPath: String
+        let scope: ServiceItem.Scope
+        let date: Date
+
+        var id: String { backupURL.path }
+
+        /// /Library 下的配置需要管理员权限才能放回去
+        var needsAdmin: Bool { scope == .allUsers || scope == .daemon }
+
+        var scopeTitle: String {
+            switch scope {
+            case .user: return "仅当前用户"
+            case .allUsers: return "所有用户"
+            case .daemon: return "系统级"
+            case .systemAgent, .systemDaemon: return "系统服务"
+            }
+        }
+
+        var friendlyDate: String {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "zh_CN")
+            let cal = Calendar.current
+            if cal.component(.year, from: date) == cal.component(.year, from: Date()) {
+                f.dateFormat = "M 月 d 日 HH:mm"
+            } else {
+                f.dateFormat = "yyyy 年 M 月 d 日 HH:mm"
+            }
+            return f.string(from: date)
+        }
+    }
+
+    enum RestoreCleanupResult: Sendable {
+        case success(String)
+        case failure(String)
+        case cancelled
+    }
+
+    static func restoreConfirmTitle(for backup: RestorableCleanup) -> String {
+        "确定把「\(backup.name)」的配置放回原处吗？"
+    }
+
+    static func restoreConfirmMessage(for backup: RestorableCleanup) -> String {
+        var parts = ["只会把配置文件放回去，不会自动开启。如果那个程序还没装回来，它仍会显示为残留项，之后可以再清理。"]
+        if backup.needsAdmin {
+            parts.append("这一项在系统目录里，可能要输入一次登录密码。")
+        }
+        return parts.joined()
+    }
+
+    /// 清理时留下的、原处已经没有文件的备份。编辑时的备份、系统路径、以及已经又出现在列表里的项都不会出现。
+    static func restorableCleanupBackups(excluding existing: [ServiceItem] = []) -> [RestorableCleanup] {
+        let fm = FileManager.default
+        let files = (try? fm.contentsOfDirectory(at: backupDir, includingPropertiesForKeys: nil)) ?? []
+        let occupied = Set(existing.map { $0.scope.rawValue + "/" + $0.label })
+        var result: [RestorableCleanup] = []
+        for jsonURL in files where jsonURL.pathExtension == "json" {
+            let plistURL = jsonURL.deletingPathExtension().appendingPathExtension("plist")
+            guard fm.fileExists(atPath: plistURL.path),
+                  let data = try? Data(contentsOf: jsonURL),
+                  let meta = try? JSONDecoder().decode(CleanupBackupMeta.self, from: data),
+                  meta.reason == "orphan-cleanup",
+                  let item = makeRestorable(from: meta, backupURL: plistURL),
+                  !occupied.contains(item.scope.rawValue + "/" + item.label)
+            else { continue }
+            result.append(item)
+        }
+        return result.sorted { $0.date > $1.date }
+    }
+
+    private static func makeRestorable(from meta: CleanupBackupMeta, backupURL: URL) -> RestorableCleanup? {
+        guard meta.reason == "orphan-cleanup" else { return nil }
+        guard !meta.label.hasPrefix(MyTask.labelPrefix) else { return nil }
+        guard let scope = ServiceItem.Scope(rawValue: meta.scope),
+              scope == .user || scope == .allUsers || scope == .daemon
+        else { return nil }
+        guard let dest = validatedRestoreDestination(path: meta.originalPath, scope: scope) else { return nil }
+        if FileManager.default.fileExists(atPath: dest.path) { return nil }
+
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.dateFormat = "yyyyMMdd-HHmmss"
+        let date = stamp.date(from: meta.createdAt)
+            ?? ((try? backupURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast)
+
+        return RestorableCleanup(
+            backupURL: backupURL,
+            label: meta.label,
+            name: meta.name,
+            originalPath: dest.path,
+            scope: scope,
+            date: date
+        )
+    }
+
+    /// 只允许还原到三个第三方自启动目录里的一份 .plist，不允许任何子目录或系统路径。
+    static func validatedRestoreDestination(path: String, scope: ServiceItem.Scope) -> URL? {
+        let allowed: URL
+        switch scope {
+        case .user: allowed = Paths.userAgents
+        case .allUsers: allowed = Paths.globalAgents
+        case .daemon: allowed = Paths.globalDaemons
+        case .systemAgent, .systemDaemon: return nil
+        }
+        let dest = URL(fileURLWithPath: path).standardizedFileURL
+        guard dest.pathExtension.lowercased() == "plist" else { return nil }
+        let name = dest.lastPathComponent
+        guard !name.isEmpty, name != ".", name != "..", !name.hasPrefix("."), !name.contains("/"), !name.contains("\0") else {
+            return nil
+        }
+        let parent = dest.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        let allowedResolved = allowed.resolvingSymlinksInPath().standardizedFileURL
+        guard parent.path == allowedResolved.path else { return nil }
+        return dest
+    }
+
+    /// 把一份清理备份放回原来的位置。只还原文件，不自动加载或开启；系统目录需要管理员权限。
+    static func restoreCleanupBackup(_ backup: RestorableCleanup) -> RestoreCleanupResult {
+        // 当场再检查一遍，不信任列表打开时的状态
+        guard !backup.label.hasPrefix(MyTask.labelPrefix) else {
+            return .failure("这是启动台助手自己的任务，不能从这里还原。")
+        }
+        guard let dest = validatedRestoreDestination(path: backup.originalPath, scope: backup.scope) else {
+            return .failure("「\(backup.name)」的原位置不在允许还原的目录里，没有放回去。")
+        }
+        if FileManager.default.fileExists(atPath: dest.path) {
+            return .failure("「\(backup.name)」原来的位置已经有一份配置了，没有覆盖。")
+        }
+        guard FileManager.default.fileExists(atPath: backup.backupURL.path) else {
+            return .failure("「\(backup.name)」的备份文件已经不在了。")
+        }
+        do {
+            try validate(backup.backupURL)
+        } catch {
+            return .failure("「\(backup.name)」的备份读不出来，没有还原（\(FriendlyError.text(error.localizedDescription))）。")
+        }
+        guard let dict = PlistIO.read(backup.backupURL) else {
+            return .failure("「\(backup.name)」的备份读不出来，没有还原。")
+        }
+        if let label = dict["Label"] as? String, label != backup.label {
+            return .failure("「\(backup.name)」的备份已经变了，没有还原。")
+        }
+        if dict["Label"] == nil {
+            return .failure("「\(backup.name)」的备份已经变了，没有还原。")
+        }
+
+        if backup.needsAdmin {
+            let q = Shell.shellQuote
+            let script = "/bin/mkdir -p \(q(dest.deletingLastPathComponent().path)) && /bin/cp -n \(q(backup.backupURL.path)) \(q(dest.path)) && /usr/sbin/chown root:wheel \(q(dest.path)) && /bin/chmod 644 \(q(dest.path))"
+            let r = Shell.runAsAdmin(script: script)
+            if isAdminCancelled(r) {
+                return .cancelled
+            }
+            if !FileManager.default.fileExists(atPath: dest.path) {
+                let detail = r.ok ? "放回原处时出了点问题。" : FriendlyError.text(r.output)
+                return .failure("「\(backup.name)」没能还原（\(detail)）。")
+            }
+        } else {
+            do {
+                try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: backup.backupURL, to: dest)
+            } catch {
+                return .failure("「\(backup.name)」没能还原（\(FriendlyError.text(error.localizedDescription))）。")
+            }
+        }
+
+        var text = "已经把「\(backup.name)」的配置放回原处。不会自动开启，你可以在列表里看到它。"
+        let program = (dict["Program"] as? String) ?? (dict["ProgramArguments"] as? [String])?.first
+        if ServiceItem.isProgramMissing(program) {
+            text += "那个程序现在还不在，它仍会显示为残留项。"
+        }
+        return .success(text)
     }
 }

@@ -51,6 +51,10 @@ struct StartupView: View {
     @State private var userChoseFilter = false
     /// 等用户确认后再移到废纸篓的残留项
     @State private var pendingTrash: [ServiceItem] = []
+    /// 清理时留下的、可以还原的备份
+    @State private var restorable: [ServiceEditor.RestorableCleanup] = []
+    @State private var showRestore = false
+    @State private var restoreMessage: String?
 
     private func matchesQuery(_ item: ServiceItem) -> Bool {
         query.isEmpty
@@ -146,6 +150,27 @@ struct StartupView: View {
                 .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 .padding([.horizontal, .top], 12)
             }
+            // 误清理后，列表里已经没有这一项，详情页进不去；在这里给出从备份还原的入口
+            if !restorable.isEmpty {
+                let n = restorable.count
+                HStack(alignment: .center, spacing: 10) {
+                    Label(n == 1
+                          ? "有 1 份已清理的配置备份。如果是误操作，可以还原回去（不会自动开启）。"
+                          : "有 \(n) 份已清理的配置备份。如果是误操作，可以还原回去（不会自动开启）。",
+                          systemImage: "arrow.uturn.backward")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .combine)
+                    Button("从备份还原…") { showRestore = true; restoreMessage = nil }
+                        .controlSize(.small)
+                        .disabled(store.isWorking)
+                        .accessibilityHint(n == 1 ? "打开备份列表，还原这份配置" : "打开备份列表，还原这 \(n) 份配置中的某一份")
+                }
+                .padding(10)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .padding([.horizontal, .top], 12)
+            }
             Picker("显示", selection: filterBinding) {
                 // 「最近新增」只在有新项（或正选着它）时出现，平时不占位置
                 ForEach(StartupFilter.allCases.filter { $0 != .recent || filter == .recent || count(.recent) > 0 }) { f in
@@ -220,7 +245,9 @@ struct StartupView: View {
                 EmptyListOverlay(isLoading: store.isLoading,
                                  isEmpty: [ServiceItem.Scope.user, .allUsers, .daemon].allSatisfy { items($0).isEmpty },
                                  query: query,
-                                 emptyText: filter.emptyText)
+                                 emptyText: (filter == .orphan && query.isEmpty && !restorable.isEmpty)
+                                 ? "没有残留项了。如果是刚清理错了，可以用上面的「从备份还原…」。"
+                                 : filter.emptyText)
             }
             Text("提示：关掉不常用的自启动项可以让开机更快，随时都能再打开。")
                 .font(.caption).foregroundStyle(.secondary)
@@ -239,10 +266,39 @@ struct StartupView: View {
         // 成功提示单独挂在一层上，免得和上面的报错框抢同一个 .alert
         .background(Color.clear.noticeAlert($store.lastNotice))
         .confirmTrashOrphans($pendingTrash, isWorking: store.isWorking) { store.cleanOrphans($0) }
-        .onAppear { suggestRecentFilterIfNeeded() }
+        .sheet(isPresented: $showRestore) {
+            RestoreCleanupSheet(backups: restorable, isWorking: store.isWorking, message: restoreMessage) { item in
+                store.restoreCleanupBackup(item) { result in
+                    refreshRestorable()
+                    switch result {
+                    case .success(let text):
+                        if restorable.isEmpty {
+                            showRestore = false
+                            store.lastNotice = text
+                        } else {
+                            restoreMessage = text
+                        }
+                    case .failure(let text):
+                        restoreMessage = text
+                    case .cancelled:
+                        restoreMessage = "你取消了输入密码，没有还原。"
+                    }
+                }
+            }
+        }
+        .onAppear {
+            suggestRecentFilterIfNeeded()
+            refreshRestorable()
+        }
         // 第一次扫描还没完成就点进来时，等结果出来再决定要不要切到「最近新增」
         .onChange(of: store.isLoading) { loading in
-            if !loading { suggestRecentFilterIfNeeded() }
+            if !loading {
+                suggestRecentFilterIfNeeded()
+                refreshRestorable()
+            }
+        }
+        .onChange(of: store.isWorking) { working in
+            if !working { refreshRestorable() }
         }
     }
 
@@ -264,6 +320,10 @@ struct StartupView: View {
                 filter = .all
             }
         }
+    }
+
+    private func refreshRestorable() {
+        restorable = ServiceEditor.restorableCleanupBackups(excluding: store.startupItems)
     }
 
     /// 有未确认的新增项时，点进这一页就直接看到它们（侧栏蓝点的配套动作）

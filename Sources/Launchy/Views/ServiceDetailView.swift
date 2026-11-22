@@ -99,6 +99,7 @@ struct ServiceDetailView: View {
             ServiceIconView(item: item, size: 52)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.friendlyName).font(.title2.weight(.bold))
+                    .accessibilityAddTraits(.isHeader)
                 Text(info.owningAppName.map { "来自：\($0)" } ?? item.scope.title)
                     .foregroundStyle(.secondary)
             }
@@ -106,14 +107,16 @@ struct ServiceDetailView: View {
             Text(item.statusText)
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Color.secondary.opacity(0.12), in: Capsule())
+                // 光读「已停用」不知道指什么，补上「当前状态」
+                .accessibilityLabel("当前状态：\(item.statusText)")
         }
     }
 
     private var stateView: some View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            GridRow { Text("状态").foregroundStyle(.secondary); Text(stateText) }
-            GridRow { Text("进程号").foregroundStyle(.secondary); Text(state?.pid.map(String.init) ?? "—") }
-            GridRow { Text("上次退出码").foregroundStyle(.secondary); Text(state?.lastExitCode ?? "—") }
+            GridRow { fieldName("状态"); fieldValue("状态", stateText) }
+            GridRow { fieldName("进程号"); fieldValue("进程号", state?.pid.map(String.init) ?? "—") }
+            GridRow { fieldName("上次退出码"); fieldValue("上次退出码", state?.lastExitCode ?? "—") }
         }
     }
 
@@ -151,6 +154,7 @@ struct ServiceDetailView: View {
                 ProgressView().controlSize(.small)
                 Text("正在检查签名…").foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -182,12 +186,12 @@ struct ServiceDetailView: View {
 
     private var techInfo: some View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            GridRow { Text("标签").foregroundStyle(.secondary); mono(item.label) }
-            GridRow { Text("程序").foregroundStyle(.secondary); mono(info.program ?? "—") }
+            GridRow { fieldName("标签"); mono(item.label, name: "标签") }
+            GridRow { fieldName("程序"); mono(info.program ?? "—", name: "程序") }
             if info.arguments.count > 1 {
-                GridRow { Text("参数").foregroundStyle(.secondary); mono(info.arguments.dropFirst().joined(separator: " ")) }
+                GridRow { fieldName("参数"); mono(info.arguments.dropFirst().joined(separator: " "), name: "参数") }
             }
-            GridRow { Text("配置文件").foregroundStyle(.secondary); mono(item.plistURL.path) }
+            GridRow { fieldName("配置文件"); mono(item.plistURL.path, name: "配置文件") }
         }
     }
 
@@ -210,13 +214,30 @@ struct ServiceDetailView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
+            // VoiceOver 可以按「标题」在几段之间跳着听
+            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
             content()
         }
     }
 
-    private func mono(_ s: String) -> some View {
+    /// 表格左边的灰色名称：读屏时并进右边的值里一起读，这里不单独读
+    private func fieldName(_ name: String) -> some View {
+        Text(name).foregroundStyle(.secondary).accessibilityHidden(true)
+    }
+
+    /// 表格右边的值，读成「状态：运行中」，不会只听到一个孤零零的数字或「—」
+    private func fieldValue(_ name: String, _ value: String) -> some View {
+        Text(value).accessibilityLabel("\(name)：\(spoken(value))")
+    }
+
+    private func mono(_ s: String, name: String) -> some View {
         Text(s).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+            .accessibilityLabel("\(name)：\(spoken(s))")
+    }
+
+    /// 「—」读出来没有意义，换成「没有」
+    private func spoken(_ value: String) -> String {
+        value == "—" ? "没有" : value
     }
 
     /// 在后台执行（可能会弹密码框），完成后提示结果并刷新状态
@@ -315,9 +336,11 @@ struct ServiceEditView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("编辑「\(item.friendlyName)」").font(.title3.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
             if item.scope.needsAdmin || item.scope == .allUsers {
                 Label("这个文件在 /Library 下，保存时需要输入管理员密码。", systemImage: "key")
                     .font(.callout).foregroundStyle(.orange)
+                    .accessibilityElement(children: .combine)
             }
 
             Form {
@@ -325,9 +348,12 @@ struct ServiceEditView: View {
                     TextField("程序", text: $program)
                     VStack(alignment: .leading) {
                         Text("参数（每行一个）").font(.caption).foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        // 多行输入框没有自带名字，读屏只会说「文本」，这里告诉它是什么
                         TextEditor(text: $argumentsText)
                             .font(.system(.callout, design: .monospaced))
                             .frame(height: 60)
+                            .accessibilityLabel("参数，每行一个")
                     }
                     Toggle("开机登录时运行", isOn: $runAtLoad)
                     Picker("定时", selection: $mode) {
@@ -341,6 +367,7 @@ struct ServiceEditView: View {
                             Text("这个任务的定时比较复杂，表单里没法完整编辑。保持原样就不会改动它；要改的话可以选别的方式，或者用下面的高级编辑。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
                     } else if mode == .interval {
                         Stepper("每隔 \(intervalMinutes) 分钟", value: $intervalMinutes, in: 1...10080)
                     } else if mode == .daily {
@@ -355,6 +382,7 @@ struct ServiceEditView: View {
                         TextEditor(text: $rawText)
                             .font(.system(.caption, design: .monospaced))
                             .frame(minHeight: 160)
+                            .accessibilityLabel("原始配置，plist XML")
                     }
                 }
             }
@@ -369,10 +397,14 @@ struct ServiceEditView: View {
                 }
                 .frame(width: 140)
                 .disabled(isSaving)
+                .accessibilityHint(backups.isEmpty ? "还没有备份" : "选一份备份，把这项服务的配置换回当时的样子")
                 Spacer()
                 if isSaving {
-                    ProgressView().controlSize(.small)
-                    Text("正在保存…").font(.callout).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("正在保存…").font(.callout).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                     .disabled(isSaving)

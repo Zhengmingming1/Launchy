@@ -13,6 +13,7 @@ struct RestoreCleanupSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("还原已清理的配置")
                 .font(.title2.weight(.bold))
+                .accessibilityAddTraits(.isHeader)
             Text("这些是清理残留项时留下的备份。还原只会把配置文件放回原处，不会自动开启。更早清理、又没有留下备份记录的，可以到废纸篓里找。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -40,6 +41,8 @@ struct RestoreCleanupSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // 名称和备份时间一次读完，不用分两下
+                        .accessibilityElement(children: .combine)
                         Button("还原…") { pending = item }
                             .disabled(isWorking)
                             .accessibilityHint("把「\(item.name)」的配置放回原处，不会自动开启")
@@ -50,7 +53,10 @@ struct RestoreCleanupSheet: View {
             }
 
             HStack {
-                if isWorking { ProgressView().controlSize(.small) }
+                if isWorking {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel("正在处理")
+                }
                 Spacer()
                 Button("关闭") { dismiss() }
             }

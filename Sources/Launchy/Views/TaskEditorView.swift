@@ -21,6 +21,8 @@ struct TaskEditorView: View {
     @State private var blockedHighlightTask: Task<Void, Never>?
     /// 间隔数字还没填对时，闪动的同时把光标放进输入框，方便直接改。
     @FocusState private var amountFieldFocused: Bool
+    /// 切换单位时不是整小时、做了四舍五入：记下「原来几分钟 → 现在几小时」，用来说一句。
+    @State private var roundedUnitNote: (minutes: Int, hours: Int)?
 
     init(task: MyTask?, onSave: @escaping (MyTask) -> Void) {
         self.original = task
@@ -79,6 +81,11 @@ struct TaskEditorView: View {
         case .runScript:
             return "\(every)运行一次有点频繁，会让电脑更费电；脚本还没跑完时，下一次会被跳过。没有特别需要的话，建议 5 分钟以上。"
         }
+    }
+    /// 切换到「小时」时四舍五入过，提醒一句；用户再改数字或单位后就不再显示。
+    private var unitRoundingNote: String? {
+        guard scheduleKind == .every, unitIsHour, let n = roundedUnitNote, amount == n.hours else { return nil }
+        return "\(n.minutes) 分钟不是整小时，已按 \(n.hours) 小时算。想要更准的话，可以切回「分钟」。"
     }
     /// 选中的文件已经找不到了（例如修改一个旧任务，而程序已被移走）
     private var pathMissing: Bool { !path.isEmpty && ServiceItem.isProgramMissing(path) }
@@ -142,6 +149,14 @@ struct TaskEditorView: View {
             ChoiceRow(options: TaskSchedule.Kind.allCases, selection: $scheduleKind,
                       title: { $0.title }, icon: { $0.icon }, groupName: "什么时候做")
             scheduleDetail
+            // 换单位时四舍五入过，说一句，免得以为间隔被悄悄改了
+            if let note = unitRoundingNote {
+                Label(note, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
             // 间隔太短时温和提醒一句，仍然可以保存
             if let note = shortIntervalNote {
                 Label(note, systemImage: "exclamationmark.circle")
@@ -198,9 +213,16 @@ struct TaskEditorView: View {
             .animation(.easeInOut(duration: 0.15), value: saveBlockedStep)
         }
         .animation(.easeInOut(duration: 0.15), value: shortIntervalNote)
+        .animation(.easeInOut(duration: 0.15), value: unitRoundingNote)
         .padding(24)
         .frame(width: 600)
         .onChange(of: actionKind) { _ in path = "" } // 换了类型，之前选的路径多半不适用
+        // 换单位时把数字一起换算，避免「60 分钟」一切就变成「60 小时」
+        .onChange(of: unitIsHour) { toHours in
+            let result = TaskSchedule.convertInterval(amount, toHours: toHours)
+            roundedUnitNote = (toHours && result.rounded) ? (amount, result.amount) : nil
+            amount = result.amount
+        }
         .onChange(of: canSave) { ok in
             // 补全之后立刻停掉闪动，避免描边留在已经填好的地方
             if ok {

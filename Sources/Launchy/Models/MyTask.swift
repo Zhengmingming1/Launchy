@@ -95,6 +95,22 @@ enum TaskSchedule: Equatable {
         }
     }
 
+    /// 「每隔」的单位在分钟和小时之间切换时，尽量让实际间隔保持不变。
+    /// - 小时 → 分钟：总是换算（2 小时 → 120 分钟），间隔完全一样。
+    /// - 分钟 → 小时：60 分钟以上才换算（60 → 1、90 → 2，四舍五入，至少 1 小时）；
+    ///   不到 60 分钟的数字多半是用户正准备填小时数，原样保留。
+    /// 返回换算后的数字，以及是否因为不是整小时而做了四舍五入。
+    static func convertInterval(_ amount: Int, toHours: Bool) -> (amount: Int, rounded: Bool) {
+        guard amount > 0 else { return (amount, false) }
+        if !toHours {
+            let (m, overflow) = amount.multipliedReportingOverflow(by: 60)
+            return overflow ? (amount, false) : (m, false)
+        }
+        guard amount >= 60 else { return (amount, false) }
+        let hours = max(1, amount / 60 + (amount % 60 >= 30 ? 1 : 0))
+        return (hours, amount % 60 != 0)
+    }
+
     var kind: Kind {
         switch self {
         case .every: return .every

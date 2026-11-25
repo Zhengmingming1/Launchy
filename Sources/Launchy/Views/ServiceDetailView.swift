@@ -16,6 +16,8 @@ struct ServiceDetailView: View {
     @State private var signatureChecked = false
     /// 等用户确认后再把这份残留配置移到废纸篓
     @State private var pendingTrash: [ServiceItem] = []
+    /// 刚拷贝的是哪一行（"全部" 表示整段），用来短暂显示一个对勾
+    @State private var copiedField: String?
 
     init(item: ServiceItem) {
         self.item = item
@@ -185,13 +187,73 @@ struct ServiceDetailView: View {
     }
 
     private var techInfo: some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-            GridRow { fieldName("标签"); mono(item.label, name: "标签") }
-            GridRow { fieldName("程序"); mono(info.program ?? "—", name: "程序") }
-            if info.arguments.count > 1 {
-                GridRow { fieldName("参数"); mono(info.arguments.dropFirst().joined(separator: " "), name: "参数") }
+        VStack(alignment: .leading, spacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                ForEach(techFields, id: \.name) { field in
+                    GridRow {
+                        fieldName(field.name)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            mono(field.value, name: field.name)
+                            if field.value != "—" {
+                                copyButton(name: field.name, value: field.value)
+                            }
+                        }
+                    }
+                }
             }
-            GridRow { fieldName("配置文件"); mono(item.plistURL.path, name: "配置文件") }
+            Button {
+                copy(techSummary, as: "全部")
+            } label: {
+                Label(copiedField == "全部" ? "已拷贝，可以直接粘贴给别人" : "拷贝全部技术信息",
+                      systemImage: copiedField == "全部" ? "checkmark" : "doc.on.doc")
+            }
+            .controlSize(.small)
+            .help("把名称、状态、标签、程序和配置文件位置一起拷贝下来，方便发给别人帮忙看")
+        }
+    }
+
+    /// 技术信息的几行（名称, 值）；没有的值显示「—」
+    private struct TechField { let name: String; let value: String }
+
+    private var techFields: [TechField] {
+        var rows = [TechField(name: "标签", value: item.label),
+                    TechField(name: "程序", value: info.program ?? "—")]
+        if info.arguments.count > 1 {
+            rows.append(TechField(name: "参数", value: info.arguments.dropFirst().joined(separator: " ")))
+        }
+        rows.append(TechField(name: "配置文件", value: item.plistURL.path))
+        return rows
+    }
+
+    /// 一起拷贝时的纯文本：别人一看就知道是哪一项、现在什么状态
+    private var techSummary: String {
+        var lines = ["名称：\(item.friendlyName)", "状态：\(stateText)"]
+        if let code = state?.lastExitCode, !code.isEmpty { lines.append("上次退出码：\(code)") }
+        lines += techFields.map { "\($0.name)：\($0.value)" }
+        return lines.joined(separator: "\n")
+    }
+
+    /// 每行右边的小拷贝按钮，点完短暂变成对勾
+    private func copyButton(name: String, value: String) -> some View {
+        Button {
+            copy(value, as: name)
+        } label: {
+            Image(systemName: copiedField == name ? "checkmark" : "doc.on.doc")
+                .foregroundStyle(copiedField == name ? Color.green : Color.secondary)
+                .frame(width: 14)
+        }
+        .buttonStyle(.borderless)
+        .help(copiedField == name ? "已拷贝" : "拷贝\(name)")
+        .accessibilityLabel(copiedField == name ? "已拷贝\(name)" : "拷贝\(name)")
+    }
+
+    private func copy(_ text: String, as field: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        copiedField = field
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if copiedField == field { copiedField = nil }
         }
     }
 

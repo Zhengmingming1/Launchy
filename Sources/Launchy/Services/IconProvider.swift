@@ -53,12 +53,22 @@ enum IconCategory {
     }
 }
 
-/// 图标缓存：在后台查找 app 并读取图标，读到后刷新界面
+/// 图标缓存：在后台查找 app 并读取图标，读到后刷新界面。
+///
+/// 省内存的两个做法（参考 p0deje/Maccy 按 app 共用图标的思路，没有使用其代码）：
+/// 1. 同一个 app 的多个服务（例如 Adobe、Microsoft 一个软件带好几个自启动项）共用同一张图标，
+///    不再每个服务各读一份。
+/// 2. 系统给的 app 图标里带着从 16 到 1024 像素的多种尺寸，界面最大只用到 52 点。
+///    读到后先缩成一张 128×128 像素的小图（Retina 屏上 64 点也清晰）再保存，原图随即释放。
 @MainActor
 final class IconProvider: ObservableObject {
     static let shared = IconProvider()
 
-    @Published private var icons: [String: NSImage] = [:]
+    /// 缩小后的图标边长（点）。界面上最大 52 点，留一点余量；按 2 倍像素绘制。
+    nonisolated static let thumbnailPoints: CGFloat = 64
+
+    @Published private var icons: [String: NSImage] = [:]   // 服务 id -> 图标（同一 app 的服务指向同一张图）
+    private var appIcons: [String: NSImage] = [:]            // app 路径 -> 已缩小的图标
     private var missing = Set<String>()   // 已经确认找不到 app 的
     private var loading = Set<String>()
 
@@ -70,12 +80,54 @@ final class IconProvider: ObservableObject {
         loading.insert(key)
         DispatchQueue.global(qos: .utility).async {
             let url = AppResolver.resolve(label: label, program: program)
-            let image = url.map { NSWorkspace.shared.icon(forFile: $0.path) }
             DispatchQueue.main.async {
-                self.loading.remove(key)
-                if let image { self.icons[key] = image } else { self.missing.insert(key) }
+                guard let url else {
+                    self.loading.remove(key)
+                    self.missing.insert(key)
+                    return
+                }
+                let path = url.path
+                // 同一个 app 的图标已经读过：直接共用，不再读一遍
+                if let shared = self.appIcons[path] {
+                    self.loading.remove(key)
+                    self.icons[key] = shared
+                    return
+                }
+                DispatchQueue.global(qos: .utility).async {
+                    let image = Self.thumbnail(NSWorkspace.shared.icon(forFile: path))
+                    DispatchQueue.main.async {
+                        self.loading.remove(key)
+                        // 并发读同一个 app 时，以先读完的为准，保证只留一份
+                        let kept = self.appIcons[path] ?? image
+                        self.appIcons[path] = kept
+                        self.icons[key] = kept
+                    }
+                }
             }
         }
+    }
+
+    /// 把系统图标画成一张固定大小的小位图。画不出来时退回原图，保证一定有图标显示。
+    nonisolated static func thumbnail(_ source: NSImage) -> NSImage {
+        let points = thumbnailPoints
+        let pixels = Int(points * 2)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep)
+        else { return source }
+        rep.size = NSSize(width: points, height: points)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        source.draw(in: NSRect(x: 0, y: 0, width: points, height: points),
+                    from: .zero, operation: .copy, fraction: 1)
+        context.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
     }
 }
 

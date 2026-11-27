@@ -10,6 +10,8 @@ struct ServiceDetailView: View {
     @State private var info: ServiceInfo
     @State private var state: Launchctl.ServiceState?
     @State private var message: String?
+    /// 上面的 message 是操作失败的报错（不是「已停止」之类的成功提示）
+    @State private var messageIsError = false
     @State private var showEditor = false
     /// 程序签名（第三方服务才查，在后台读取）
     @State private var signature: CodeSignature.Result?
@@ -78,8 +80,13 @@ struct ServiceDetailView: View {
         }) {
             ServiceEditView(item: item, info: info)
         }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+        .alert(messageIsError ? FriendlyError.alertSummary(message ?? "") : (message ?? ""),
+               isPresented: Binding(get: { message != nil },
+                                    set: { if !$0 { message = nil; messageIsError = false } })) {
             Button("知道了", role: .cancel) {}
+            if messageIsError, let text = message, !FriendlyError.isUserCancel(text) {
+                Button("拷贝详情") { ErrorReport.copy(text) }
+            }
         }
         .confirmTrashOrphans($pendingTrash, isWorking: store.isWorking) { items in
             store.cleanOrphans(items) { result in
@@ -87,6 +94,7 @@ struct ServiceDetailView: View {
                     dismiss()
                 } else if let text = store.lastNotice, !text.isEmpty {
                     // 还在这页，用本页的提示框说清楚；清掉 store 里的，避免关掉后再弹一次
+                    messageIsError = false
                     message = text
                     store.lastNotice = nil
                 }
@@ -307,6 +315,7 @@ struct ServiceDetailView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let r = work()
             DispatchQueue.main.async {
+                messageIsError = !r.ok
                 message = r.ok ? ok : FriendlyError.text(r.output)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { refreshState() }
             }
@@ -479,8 +488,12 @@ struct ServiceEditView: View {
         .padding(20)
         .frame(width: 620, height: 640)
         .onAppear { backups = ServiceEditor.backups(for: item) }
-        .alert(error ?? "", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .alert(FriendlyError.alertSummary(error ?? ""),
+               isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("知道了", role: .cancel) {}
+            if let text = error, !FriendlyError.isUserCancel(text) {
+                Button("拷贝详情") { ErrorReport.copy(text) }
+            }
         }
     }
 

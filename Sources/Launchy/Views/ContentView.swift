@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// 左侧栏的三个页面
 enum Page: String, CaseIterable, Identifiable {
@@ -215,17 +216,32 @@ struct ItemRow: View {
     }
 }
 
-/// 把 store 里的错误信息弹成提示框
+/// 把 store 里的错误信息弹成提示框。原始报错太长时先收起来，另给「拷贝详情」
 struct ErrorAlert: ViewModifier {
     @Binding var message: String?
     func body(content: Content) -> some View {
-        content.alert("出了点小问题", isPresented: Binding(
+        // 关掉提示框时 message 会被清空，先记下这一份，按钮里拷贝的就是它
+        let current = message ?? ""
+        return content.alert("出了点小问题", isPresented: Binding(
             get: { message != nil },
             set: { if !$0 { message = nil } })) {
             Button("知道了", role: .cancel) {}
+            if !current.isEmpty && !FriendlyError.isUserCancel(current) {
+                Button("拷贝详情") { ErrorReport.copy(current) }
+            }
         } message: {
-            Text(message ?? "")
+            Text(FriendlyError.alertSummary(current))
         }
+    }
+}
+
+/// 把完整报错（加上软件和系统版本）放进剪贴板，方便发给别人帮忙看
+enum ErrorReport {
+    static func copy(_ message: String) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(FriendlyError.report(message, appVersion: version), forType: .string)
     }
 }
 

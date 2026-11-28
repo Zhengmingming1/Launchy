@@ -111,6 +111,33 @@ enum TaskSchedule: Equatable {
         return (hours, amount % 60 != 0)
     }
 
+    /// 「每隔」最长一年。再长没有实际意义，而且数字特别大时换算成秒会溢出、让软件直接闪退。
+    static let maxIntervalMinutes = 365 * 24 * 60
+
+    /// 把编辑窗口里填的数字安全地换算成分钟。不是正数、超过一年或换算溢出时返回 nil。
+    static func intervalMinutes(_ amount: Int, hours: Bool) -> Int? {
+        guard amount > 0 else { return nil }
+        let (minutes, overflow) = amount.multipliedReportingOverflow(by: hours ? 60 : 1)
+        guard !overflow, minutes <= maxIntervalMinutes else { return nil }
+        return minutes
+    }
+
+    /// 间隔超过一天时的提醒（不阻止保存）：换成「大约几天一次」，并说明重启后会重新计时。
+    /// launchd 的 StartInterval 从任务载入（登录）那一刻开始计时，电脑每天关机或重启的话，
+    /// 间隔比一天长的任务可能永远等不到运行。
+    static func longIntervalNote(minutes: Int) -> String? {
+        guard minutes > 24 * 60, minutes <= maxIntervalMinutes else { return nil }
+        let days: String
+        if minutes % (24 * 60) == 0 {
+            days = "\(minutes / (24 * 60))"
+        } else {
+            let tenths = (minutes * 10 + 720) / (24 * 60) // 四舍五入到 0.1 天
+            days = tenths % 10 == 0 ? "\(tenths / 10)" : "\(tenths / 10).\(tenths % 10)"
+        }
+        let gap = minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes) 分钟"
+        return "每隔 \(gap)，也就是大约 \(days) 天才运行一次。注意：每次重启或重新登录后会重新计时，电脑如果不是一直开着，可能一直等不到它运行。想每天跑一次，选「每天固定时间」更稳。"
+    }
+
     var kind: Kind {
         switch self {
         case .every: return .every

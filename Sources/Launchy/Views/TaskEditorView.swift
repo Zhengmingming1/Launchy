@@ -50,7 +50,9 @@ struct TaskEditorView: View {
     private var schedule: TaskSchedule {
         switch scheduleKind {
         case .every:
-            return .every(minutes: max(1, amount) * (unitIsHour ? 60 : 1))
+            // 数字填得特别大时不能直接相乘（会溢出闪退），先按最长一年算，保存时会拦住
+            return .every(minutes: TaskSchedule.intervalMinutes(max(1, amount), hours: unitIsHour)
+                          ?? TaskSchedule.maxIntervalMinutes)
         case .daily:
             let c = Calendar.current.dateComponents([.hour, .minute], from: time)
             return .daily(hour: c.hour ?? 0, minute: c.minute ?? 0)
@@ -65,7 +67,19 @@ struct TaskEditorView: View {
     private var saveBlockedStep: String? {
         if path.isEmpty { return "先在「做什么」下面点「选择…」选一个文件" }
         if scheduleKind == .every && amount <= 0 { return "间隔要大于 0，比如每隔 30 分钟" }
+        if intervalTooLong { return "间隔太长了，最长一年（8760 小时）" }
         return nil
+    }
+    /// 「每隔」填的数字超过一年（或大到没法换算）
+    private var intervalTooLong: Bool {
+        scheduleKind == .every && amount > 0 && TaskSchedule.intervalMinutes(amount, hours: unitIsHour) == nil
+    }
+    /// 间隔这一行需要用户改：不是正数，或者太长
+    private var intervalInvalid: Bool { scheduleKind == .every && (amount <= 0 || intervalTooLong) }
+    /// 间隔超过一天时的温和提醒（不阻止保存）
+    private var longIntervalNote: String? {
+        guard scheduleKind == .every, let m = TaskSchedule.intervalMinutes(amount, hours: unitIsHour) else { return nil }
+        return TaskSchedule.longIntervalNote(minutes: m)
     }
     /// 为什么现在还不能保存（读屏用户看不到按钮变灰，要说出来）
     private var saveBlockedReason: String? { saveBlockedStep.map { "还不能保存：\($0)" } }
@@ -93,7 +107,7 @@ struct TaskEditorView: View {
     private var shouldHighlightPath: Bool { blockedHighlightOn && path.isEmpty }
     /// 当前闪动要标出间隔那一行（已选文件，但间隔不是正数）
     private var shouldHighlightInterval: Bool {
-        blockedHighlightOn && !path.isEmpty && scheduleKind == .every && amount <= 0
+        blockedHighlightOn && !path.isEmpty && intervalInvalid
     }
 
     var body: some View {
@@ -166,6 +180,15 @@ struct TaskEditorView: View {
                     .transition(.opacity)
                     .accessibilityLabel("提醒：\(note)")
             }
+            // 间隔超过一天：换成「大约几天一次」，并提醒重启后会重新计时，仍然可以保存
+            if let note = longIntervalNote {
+                Label(note, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+                    .accessibilityLabel("提醒：\(note)")
+            }
 
             // 一句话总结，让人一眼看懂
             Label {
@@ -214,6 +237,7 @@ struct TaskEditorView: View {
         }
         .animation(.easeInOut(duration: 0.15), value: shortIntervalNote)
         .animation(.easeInOut(duration: 0.15), value: unitRoundingNote)
+        .animation(.easeInOut(duration: 0.15), value: longIntervalNote)
         .padding(24)
         .frame(width: 600)
         .onChange(of: actionKind) { _ in path = "" } // 换了类型，之前选的路径多半不适用
@@ -314,7 +338,7 @@ struct TaskEditorView: View {
                 ]
             )
         }
-        if !path.isEmpty, scheduleKind == .every, amount <= 0 {
+        if !path.isEmpty, intervalInvalid {
             amountFieldFocused = true
         }
         pulseBlockedField()
